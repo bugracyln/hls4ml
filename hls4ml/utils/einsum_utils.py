@@ -15,7 +15,7 @@ class EinsumRecipe(TypedDict):
     out_transpose_idxs: tuple[int, ...]
 
 
-def _validate_einsum_expr(fn: str, shape0: tuple[int, ...], shape1: tuple[int, ...]):
+def _validate_einsum_expr(fn: str, shape0: tuple[int, ...], shape1: tuple[int, ...], context_len: int = 1, contract_dim: bool = 0):
     """Validate, resolve broadcasting, and compute output shape for einsum string.
 
     Args:
@@ -72,9 +72,10 @@ def _validate_einsum_expr(fn: str, shape0: tuple[int, ...], shape1: tuple[int, .
         if '0' not in sax_in0 and '0' not in sax_in1:
             raise ValueError(f'einsum string {fn} is invalid: output allows broadcasting, but inputs do not')
 
-    # Output index out of nowhere
+    # Output index out of nowhere (not the case if we are using context)
     if remaining := sax_out - sax_in0 - sax_in1:
-        raise ValueError(f'einsum string {fn} is invalid: output subscripts {remaining} not found in inputs')
+        if context_len == 1:
+            raise ValueError(f'einsum string {fn} is invalid: output subscripts {remaining} not found in inputs')
 
     _common_in = sax_in0 & sax_in1
 
@@ -127,11 +128,15 @@ def _validate_einsum_expr(fn: str, shape0: tuple[int, ...], shape1: tuple[int, .
                 f"Input dimension size mismatches for common subscript '{a}': {shape0[ax_0]} and {shape1[ax_1]}"
             )
 
-    out_shape = tuple(shape0[ax_in0.index(a)] if a in ax_in0 else shape1[ax_in1.index(a)] for a in ax_out)
+    if context_len > 1 and contract_dim == 0:
+        out_shape = tuple(shape0[ax_in0.index(a)] if a in ax_in0 else shape1[ax_in1.index(a)] if a in ax_in1 else context_len for a in ax_out)
+    else:
+        out_shape = tuple(shape0[ax_in0.index(a)] if a in ax_in0 else shape1[ax_in1.index(a)] for a in ax_out)
+    print("EINSUM VALIDATE:", in0, in1, out, out_shape)
     return f'{in0},{in1}->{out}', out_shape
 
 
-def parse_einsum(fn: str, input_shape0: tuple[int, ...], input_shape1: tuple[int, ...]) -> EinsumRecipe:
+def parse_einsum(fn: str, input_shape0: tuple[int, ...], input_shape1: tuple[int, ...], context_len: int = 1, contract_dim: bool = 0) -> EinsumRecipe:
     """Parse einsum operation on two input arrays, return a recipe for execution.
 
     Args:
@@ -143,7 +148,7 @@ def parse_einsum(fn: str, input_shape0: tuple[int, ...], input_shape1: tuple[int
         EinsumRecipe: einsum recipe; executed by _exec_einsum
     """
 
-    fn, _ = _validate_einsum_expr(fn, input_shape0, input_shape1)
+    fn, _ = _validate_einsum_expr(fn, input_shape0, input_shape1, context_len, contract_dim)
 
     _in, _out = fn.split('->')
     _in0, _in1 = _in.split(',')
@@ -175,13 +180,17 @@ def parse_einsum(fn: str, input_shape0: tuple[int, ...], input_shape1: tuple[int
     invariant_shape1 = tuple(input_shape1[i] for i in invariant_idxs[1])
     invariant_size0, invariant_size1 = prod(invariant_shape0), prod(invariant_shape1)
 
+    # if we are contracting along the context this MUST BE the case
+    if context_len > 1 and contract_dim == 1:
+        invariant_size0 = context_len
+
     transpose_idx0 = inplace_idxs[0] + invariant_idxs[0] + contract_idxs[0]
     transpose_idx1 = inplace_idxs[1] + invariant_idxs[1] + contract_idxs[1]
 
     out_shape_pretranspose = inplace_shape + invariant_shape0 + invariant_shape1
     _out_transpose_idx = np.argsort(tuple(map(out.index, inplace + invariant0 + invariant1)))
     out_transpose_idx = tuple(int(i) for i in _out_transpose_idx)
-
+    
     return EinsumRecipe(
         direct_sum_axis=direct_sum_axis,
         in_transpose_idxs=(transpose_idx0, transpose_idx1),

@@ -2,6 +2,7 @@ from hls4ml.backends.backend import get_backend
 from hls4ml.backends.template import FunctionCallTemplate, LayerConfigTemplate
 from hls4ml.model.layers import EinsumDense
 from hls4ml.utils.transpose_utils import transpose_config_gen
+from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
 
 from .reshaping_templates import transpose_config_template
 
@@ -61,10 +62,9 @@ struct config{index} {{
 }};
 """
 
-einsum_dense_function_template = 'nnet::einsum_dense<{input_t}, {output_t}, {config}>({input}, {output}, {w}, {b});'
-einsum_dense_da_function_template = 'nnet::einsum_dense<{input_t}, {output_t}, {config}>({input}, {output}, {b});'
+einsum_dense_function_template = 'nnet::einsum_dense<{input_t}, {output_t}, {config}>({input}, {output}, {b});'
 
-einsum_dense_include_list = ['nnet_utils/nnet_einsum_dense.h', 'nnet_utils/nnet_dense.h']
+einsum_dense_include_list = ['nnet_utils/nnet_einsum_dense_stream.h', 'nnet_utils/nnet_dense.h']
 
 
 class EinsumDenseConfigTemplate(LayerConfigTemplate):
@@ -97,7 +97,8 @@ class EinsumDenseConfigTemplate(LayerConfigTemplate):
         strategy = node.attributes['strategy']
         io_type = node.model.config.get_config_value('IOType')
 
-        assert io_type == 'io_parallel', 'EinsumDense layer only supports io_parallel and distributed_arithmetic'
+        #NO NEED THIS SINCE EINSUM CAN NOW BE STREAMED
+        # assert io_type == 'io_parallel', 'EinsumDense layer only supports io_parallel and distributed_arithmetic'
 
         # EinsumDense config
         params = default_params.copy()
@@ -153,6 +154,14 @@ class EinsumDenseFunctionTemplate(FunctionCallTemplate):
     def __init__(self):
         super().__init__(EinsumDense, include_header=einsum_dense_include_list)
         self.template = einsum_dense_function_template
+    
+    def format_stream(self, node, **params):
+        input_pipe = node.get_input_variable().pipe_name
+        output_pipe = node.get_output_variable().pipe_name
+        config = params['config']
+        w = params['w']
+        b = params['b']
+        return f'task_sequence<nnet::einsum_dense_stream<{input_pipe}, {output_pipe}, {config}>> {node.name};'
 
     def format(self, node):
         params = self._default_function_params(node)
@@ -160,7 +169,42 @@ class EinsumDenseFunctionTemplate(FunctionCallTemplate):
 
         strategy = node.attributes['strategy']
         if strategy == 'distributed_arithmetic':
-            return einsum_dense_da_function_template.format(**params)
+            return einsum_dense_function_template.format(**params)
 
         params['w'] = node.get_weights('weight').name
-        return einsum_dense_function_template.format(**params)
+
+        io_type = node.model.config.get_config_value('IOType')
+
+        if io_type == 'io_stream':
+            return self.format_stream(node, **params)
+        else:
+            return einsum_dense_function_template.format(**params)
+
+
+class EinsumStreamTaskSequenceTemplate(TaskSequenceTemplate):
+    def __init__(self):
+        super().__init__(EinsumDense)
+        self.template = 'task_sequence<nnet::einsum_dense_stream<{input_pipe}, {output_pipe}, {config}>> {name};'
+
+    def format(self, node):
+        params = self._default_function_params(node)
+        params['input_pipe'] = node.get_input_variable().pipe_name
+        if node.get_attr('data_format') == 'channels_first':
+            raise RuntimeError('channels_first not supported on oneAPI')
+        params['data_format'] = 'cl'
+
+        return self.template.format(**params)
+
+
+class EinsumDenseStreamFunctionTemplate(StreamFunctionCallTemplate):
+    def __init__(self):
+        super().__init__(EinsumDense)
+        self.template = '{name}.async({w}, {b});'
+    
+    def format(self, node):
+        params = self._default_function_params(node)
+        params['name'] = node.name
+        params['w'] = node.get_weights('weight').name
+        params['b'] = node.get_weights('bias').name
+
+        return self.template.format(**params)

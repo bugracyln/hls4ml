@@ -37,11 +37,29 @@ class QEinsumHandler(QLayerHandler):
         # fmt: on
 
         equation = strip_batch_dim(layer.equation, einsum_dense=False)
+        context_len = layer.context_len
+        contract_dim = layer.contract_dim
 
+        if context_len > 1:
+            #if contract_dim == 0 and inp0_shape[-1] == inp1_shape[-1]:
+            #    out_shape = out_tensors[0].shape[1:] + tuple([context_len])#tuple([context_len])
+            #elif contract_dim == 0:
+            #    out_shape = tuple([context_len]) + out_tensors[0].shape[1:]
+            #    out_shape = out_tensors[0].shape[1:] + tuple([context_len])
+            #else:
+            if contract_dim == 1:
+                out_shape = inp1_shape
+        
+        print(f'OUT_SHAPE: {out_shape}')
+        out_tensors[0]._shape = (out_tensors[0].shape[0],) + out_shape
+        print(f'{layer.name}: IN0: {inp0_shape}, IN1: {inp1_shape}, OUT: {out_shape}')
+        
         return {
             'class_name': 'Einsum',
             'equation': equation,
             'inp0_shape': inp0_shape,
             'inp1_shape': inp1_shape,
             'out_shape': out_shape,
+            'context_len': context_len,
+            'contract_dim': contract_dim,
         }

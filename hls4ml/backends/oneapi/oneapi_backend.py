@@ -35,7 +35,7 @@ class OneAPIBackend(FPGABackend):
         super().__init__('oneAPI')
         self._register_layer_attributes()
         self._register_flows()
-
+        
     def _register_layer_attributes(self):
         # Add RNN-specific recurrent_reuse_factor attribute
         rnn_layers = [
@@ -476,12 +476,16 @@ class OneAPIBackend(FPGABackend):
         equation = layer.attributes['equation']
         inp0_shape = layer.attributes['inp0_shape']
         inp1_shape = layer.attributes['inp1_shape']
+        context_len = layer.attributes['context_len']
+        contract_dim = layer.attributes['contract_dim']
 
-        recipe = parse_einsum(equation, inp0_shape, inp1_shape)
-        assert not any(recipe['direct_sum_axis']), (
-            'Do not put direct sum indices (e.g., only appears in one of the operands) in the equation.'
-            'Use explicit addition operator before instead.'
-        )
+        recipe = parse_einsum(equation, inp0_shape, inp1_shape, context_len, contract_dim)
+        print('RECIPE', recipe)
+        if layer.attributes['contract_dim'] == False: #only assert if we are not doing contraction along the context
+            assert not any(recipe['direct_sum_axis']), (
+                'Do not put direct sum indices (e.g., only appears in one of the operands) in the equation.'
+                'Use explicit addition operator before instead.'
+            )
         inp0_tpose_idxs, inp1_tpose_idxs = recipe['in_transpose_idxs']
         out_tpose_idxs = recipe['out_transpose_idxs']
 

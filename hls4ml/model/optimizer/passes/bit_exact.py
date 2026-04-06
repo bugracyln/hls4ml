@@ -371,12 +371,27 @@ def _(layer: EinsumDense):
     if _bias is not None:
         qint_out = qint_out + _bias.data
     k, i, f = qint_out.to_kif()
+    print(f'KIF:{k,i,f}, _bias: {_bias}')
     return k.astype(np.int16), i, f
 
 
 @_produce_kif.register
 def _(layer: Einsum):
     kif_in1, kif_in2 = get_input_kifs(layer)
+    if layer.attributes['contract_dim'] == 1: #since abs(softmax) < 1 expected range is rougly equal to input2 (value matrix contents)
+        return kif_in2
+    elif layer.attributes['context_len'] > 1: 
+        opt_precision = layer.get_output_variable().type.precision
+        print('OPT PRECISION:', opt_precision)
+        #k = np.array([int(opt_precision.signed)], dtype=np.int16)
+        #i = np.array([opt_precision.integer], dtype=np.int16)
+        #f = np.array([opt_precision.width - opt_precision.integer], dtype=np.int16)
+
+        shape = layer.get_output_variable().shape
+        k = np.full(shape, int(opt_precision.signed), dtype=np.int16)
+        i = np.full(shape, opt_precision.integer, dtype=np.int16)
+        f = np.full(shape, opt_precision.width - opt_precision.integer, dtype=np.int16)
+        return k, i, f
     qint_in1 = QIntervalArray.from_kif(*kif_in1)
     qint_in2 = QIntervalArray.from_kif(*kif_in2)
     eq = layer.attributes['equation']

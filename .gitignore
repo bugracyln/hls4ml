@@ -15,3 +15,9 @@ hls4mlprj_*
 *~
 *.ipynb_checkpoints/
 *.bak
+hls4ml/templates/oneapi/firmware/nnet_utils/nnet_causal_einsum_*.h 
+!hls4ml/templates/oneapi/firmware/nnet_utils/nnet_causal_einsum_dense.h
+hls4ml/templates/oneapi/firmware/nnet_utils/*original.h
+hls4ml/writer/oneapi_writer_orig.py
+hls4ml/converters/keras_v3/hgq2/multi_head_attention_original.py
+hls4ml/templates/oneapi/firmware/nnet_utils/nnet_streamed_attention.h

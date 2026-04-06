@@ -28,8 +28,8 @@ def extract_fixed_quantizer_config(q, tensor: 'KerasTensor', is_input: bool) -> 
     k, i, f = internal_q.kif
     k, B, I = k, k + i + f, k + i  # type: ignore # noqa: E741
     k, B, I = ops.convert_to_numpy(k), ops.convert_to_numpy(B), ops.convert_to_numpy(I)  # noqa: E741
-    I = np.where(B > 0, I, 0)  # noqa: E741 # type: ignore
-
+    I = np.where(B > 0, I, 0)  # noqa: E741 # type: ignore            
+    
     if np.size(k) != 1:
         k = np.broadcast_to(k.astype(np.int16), (1,) + shape)  # type: ignore
         B = np.broadcast_to(B.astype(np.int16), (1,) + shape)  # type: ignore

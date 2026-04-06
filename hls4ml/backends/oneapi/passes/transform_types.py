@@ -29,6 +29,11 @@ class TransformTypes(GlobalOptimizerPass):
 
         for out_name, var in node.variables.items():
             if io_type == 'io_stream':
+                if (node.class_name == 'Einsum') and (out_name in node.model.outputs):
+                    ctx = node.attributes['context_len']
+                    contract_dim = node.attributes['contract_dim']
+                    dot = node.attributes['inp0_shape'][-1] == node.attributes['inp1_shape'][-1]
+                    new_var = self.interface_var_converter.convert(var, pragma='stream', depth=1, n_pack=1, context_len=ctx, contract_dim=contract_dim, dot=dot)
                 if out_name in node.model.inputs:
                     new_var = self.interface_var_converter.convert(var, pragma='stream')
                 elif out_name in node.model.outputs:

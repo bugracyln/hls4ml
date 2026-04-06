@@ -72,6 +72,7 @@ class QSoftmaxHandler(QLayerHandler):
 
         if impl == 'stable':
             exp_table_size = 2 ** int(ops.convert_to_numpy(ops.max(layer.exp_table.iq.quantizer.bits)))  # type: ignore
+            print("######",layer.exp_table.iq.quantizer.bits, ops.max(layer.exp_table.iq.quantizer.bits), ops.convert_to_numpy(ops.max(layer.exp_table.iq.quantizer.bits)))
         else:
             exp_table_size = None  # Placeholder, will be overridden in bit-exact pass
 
