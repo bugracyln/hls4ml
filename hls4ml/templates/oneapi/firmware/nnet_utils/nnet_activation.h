@@ -137,34 +137,36 @@ template <class data_T, class res_T, typename CONFIG_T> void softmax_stable(cons
 //#include "activation_tables/exp_table.tb"
 //#include "activation_tables/invert_table.tb"
 
+    using input_t = typename data_T::value_type;
+
     // Find maximum
     Op_max<typename data_T::value_type> op_max;
     [[intel::fpga_register]] auto x_max =
         reduce<typename data_T::value_type, CONFIG_T::n_in, Op_max<typename data_T::value_type>>(data.data(), op_max);
 
     // For the diffs, use the same type as the input but force rounding and saturation
-    [[intel::fpga_register]] ac_fixed<data_T::value_type::width, data_T::value_type::i_width, true, AC_RND, AC_SAT>
-        d_xi_xmax[CONFIG_T::n_in];
+    [[intel::fpga_register]]
+        typename CONFIG_T::inp_norm_t d_xi_xmax[CONFIG_T::n_in];
     #pragma unroll
     for (unsigned i = 0; i < CONFIG_T::n_in; i++) {
-        d_xi_xmax[i] = data[i] - x_max;
+        d_xi_xmax[i] = x_max - data[i];
     }
 
     // Calculate all the e^x's
     [[intel::fpga_register]] typename CONFIG_T::exp_table_t exp_res[CONFIG_T::n_in];
     #pragma unroll
     for (unsigned i = 0; i < CONFIG_T::n_in; i++) {
-        exp_res[i] = CONFIG_T::exp_table[softmax_stable_idx_from_real_val<typename data_T::value_type, CONFIG_T>(d_xi_xmax[i])];
+        exp_res[i] = CONFIG_T::exp_table[softmax_stable_idx_from_real_val<input_t, CONFIG_T>(d_xi_xmax[i])];
     }
 
     // Explicitly sum previously calculated exponentials with an adder tree
     Op_add<typename CONFIG_T::exp_table_t> op_add;
-    [[intel::fpga_register]] typename CONFIG_T::exp_table_t exp_sum =
+    [[intel::fpga_register]] typename CONFIG_T::inv_inp_t exp_sum =
         reduce<typename CONFIG_T::exp_table_t, CONFIG_T::n_in, Op_add<typename CONFIG_T::exp_table_t>>(exp_res, op_add);
 
     // Multiply previously calculated exponetials with the reciprocal of the sum
     [[intel::fpga_register]] typename CONFIG_T::inv_table_t inv_exp_sum =
-        CONFIG_T::invert_table[softmax_stable_idx_from_real_val<typename CONFIG_T::exp_table_t, CONFIG_T>(exp_sum)];
+        CONFIG_T::invert_table[softmax_stable_idx_from_real_val<typename CONFIG_T::inv_inp_t, CONFIG_T>(exp_sum)];
 
     #pragma unroll
     for (unsigned i = 0; i < CONFIG_T::n_in; i++) {
