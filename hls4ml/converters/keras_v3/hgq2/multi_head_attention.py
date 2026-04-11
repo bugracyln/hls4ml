@@ -73,9 +73,13 @@ class QMultiHeadAttentionHandler(QLayerHandler):
     def _handle(self, layer, tensor_q, tensor_O, node_index, tensor_k, tensor_v):
         from hgq.layers import QEinsum
         from keras import KerasTensor
+        
+        ctx_len = layer.context_len
+        streamed = ctx_len > 1
 
-        #PRE-SET, CAN PASS THIS AS AN ARG TO MHA
-        ctx_len = 256
+        einsum_handler = QEinsumHandler()
+        einsum_dense_handler = QEinsumDenseHandler()
+        softmax_handler = QSoftmaxHandler()
 
         unique_name = f'{layer.name}_{node_index}'
         to_Q = layer.query_dense
@@ -84,48 +88,61 @@ class QMultiHeadAttentionHandler(QLayerHandler):
         to_O = layer.output_dense
         softmax = layer._softmax
         
-        #disable these for IO_STREAM
-        #for it in (to_Q,to_K,to_V, to_O):
-        #    if hasattr(it, "_enable_oq"):
-        #        it._enable_oq = False
-        #    if hasattr(it, "_enable_iq"):
-        #        it._enable_iq = False
-        
         Q_batch_shape = to_Q.full_output_shape
         K_batch_shape = to_K.full_output_shape
         V_batch_shape = to_V.full_output_shape
         # O_batch_shape = to_O.full_output_shape
         n_head = layer.num_heads
-        score_batch_shape = (None, n_head, 1,)#(None, n_head, *Q_batch_shape[1:-2], *K_batch_shape[1:-2])
-        
-        #einsum_QK computes vectors of 1xhidden by computing qK^T within the ctx len inputs are (HIDDEN,) and (HIDDEN,) output is (CTX,)
-        #einsum_QK = QEinsum("...j,...j->...k", name=f'{layer.name}_QK', context_len=ctx_len, contract_dim=0)
-        einsum_QK = QEinsum("abcj,abcj->acbk", name=f'{layer.name}_QK', context_len=ctx_len, contract_dim=0)
-        
-        #einsum_sV is heavily customised and contracts along context so equation MUST NOT BE CHANGED it takes (CTX,) vector and returns (L1,) weigthed sum
-        #einsum_sV = QEinsum("...j,...k->...k", name=f'{layer.name}_aV', context_len=ctx_len, contract_dim=1)
-        einsum_sV = QEinsum("acbj,abck->abck", name=f'{layer.name}_aV', context_len=ctx_len, contract_dim=1)
 
-        config_tensor_Q = KerasTensor(name=f'{unique_name}_Q', shape=Q_batch_shape)
-        config_tensor_K = KerasTensor(name=f'{unique_name}_K', shape=K_batch_shape) 
-        config_tensor_V = KerasTensor(name=f'{unique_name}_V', shape=V_batch_shape)
-        config_tensor_pre_score = KerasTensor(name=f'{unique_name}_pre_score', shape=(Q_batch_shape[0], n_head, *Q_batch_shape[1:-2], ctx_len))#(*Q_batch_shape[:-1],ctx_len))
-        config_tensor_score = KerasTensor(name=f'{unique_name}_score', shape=config_tensor_pre_score.shape)
-        config_tensor_pre_O  = KerasTensor(name=f'{unique_name}_pre_O', shape=V_batch_shape)
-        config_tensor_O  = KerasTensor(name=tensor_O.name, shape=(1,) + tensor_O.shape)#name=f'{unique_name}_O'
-        print(f'SHAPES: q,k,v: {Q_batch_shape,K_batch_shape,V_batch_shape}, qK^T: {config_tensor_pre_score.shape}, softmax: {config_tensor_score.shape}, pre_O: {config_tensor_pre_O.shape}, opt: {tensor_O.shape}')
-        
-        einsum_handler = QEinsumHandler()
-        einsum_dense_handler = QEinsumDenseHandler()
-        softmax_handler = QSoftmaxHandler()
+        if streamed:
+            #score_batch_shape = (None, n_head, 1,)
+            
+            #einsum_QK computes vectors of 1xhidden by computing qK^T within the ctx len inputs are (HIDDEN,) and (HIDDEN,) output is (CTX,)
+            einsum_QK = QEinsum("abcj,abcj->acbk", name=f'{layer.name}_QK', context_len=ctx_len, contract_dim=0)
+            
+            #einsum_sV is heavily customised and contracts along context so equation MUST NOT BE CHANGED it takes (CTX,) vector and returns (L1,) weigthed sum
+            einsum_sV = QEinsum("acbj,abck->abck", name=f'{layer.name}_aV', context_len=ctx_len, contract_dim=1)
 
-        config_to_Q = einsum_dense_handler(to_Q, [tensor_q], [config_tensor_Q]) # IN SHAPE: (EMBEDDING,) | OUT SHAPE: (HIDDEN,)
-        config_to_K = einsum_dense_handler(to_K, [tensor_k], [config_tensor_K]) # IN SHAPE: (EMBEDDING,) | OUT SHAPE: (HIDDEN,)
-        config_to_V = einsum_dense_handler(to_V, [tensor_v], [config_tensor_V]) # IN SHAPE: (EMBEDDING,) | OUT SHAPE: (HIDDEN,)
-        config_einsum_KQ = einsum_handler(einsum_QK, [config_tensor_Q, config_tensor_K], [config_tensor_pre_score]) # IN SHAPE: (HIDDEN,) AND (HIDDEN,) | OUT SHAPE: (CONTEXT_LEN,)
-        config_softmax = softmax_handler(softmax, [config_tensor_pre_score], [config_tensor_score]) # IN SHAPE: (CONTEXT_LEN,) | OUT SHAPE: (CONTEXT_LEN,)
-        config_einsum_sV = einsum_handler(einsum_sV, [config_tensor_score, config_tensor_V], [config_tensor_pre_O]) # IN SHAPE: (CONTEXT_LEN,) AND (HIDDEN,) | OUT SHAPE: (HIDDEN,)
-        config_to_O = einsum_dense_handler(to_O, [config_tensor_pre_O], [tensor_O]) # IN SHAPE: (HIDDEN,) | OUT SHAPE: (EMBEDDING,)
+            config_tensor_Q = KerasTensor(name=f'{unique_name}_Q', shape=Q_batch_shape)
+            config_tensor_K = KerasTensor(name=f'{unique_name}_K', shape=K_batch_shape) 
+            config_tensor_V = KerasTensor(name=f'{unique_name}_V', shape=V_batch_shape)
+            config_tensor_pre_score = KerasTensor(name=f'{unique_name}_pre_score', shape=(Q_batch_shape[0], n_head, *Q_batch_shape[1:-2], ctx_len))
+            config_tensor_score = KerasTensor(name=f'{unique_name}_score', shape=config_tensor_pre_score.shape)
+            config_tensor_pre_O  = KerasTensor(name=f'{unique_name}_pre_O', shape=V_batch_shape)
+            config_tensor_O  = KerasTensor(name=tensor_O.name, shape=(1,) + tensor_O.shape)
+            #print(f'SHAPES: q,k,v: {Q_batch_shape,K_batch_shape,V_batch_shape}, qK^T: {config_tensor_pre_score.shape}, softmax: {config_tensor_score.shape}, pre_O: {config_tensor_pre_O.shape}, opt: {tensor_O.shape}')
+            
+            config_to_Q = einsum_dense_handler(to_Q, [tensor_q], [config_tensor_Q])
+            config_to_K = einsum_dense_handler(to_K, [tensor_k], [config_tensor_K])
+            config_to_V = einsum_dense_handler(to_V, [tensor_v], [config_tensor_V])
+            config_einsum_KQ = einsum_handler(einsum_QK, [config_tensor_Q, config_tensor_K], [config_tensor_pre_score])
+            config_softmax = softmax_handler(softmax, [config_tensor_pre_score], [config_tensor_score])
+            config_einsum_sV = einsum_handler(einsum_sV, [config_tensor_score, config_tensor_V], [config_tensor_pre_O])
+            config_to_O = einsum_dense_handler(to_O, [config_tensor_pre_O], [tensor_O])
+        
+        else:
+            score_batch_shape = (None, n_head, *Q_batch_shape[1:-2], *K_batch_shape[1:-2])
+
+            einsum_QK = QEinsum(layer._dot_product_equation, name=f'{layer.name}_QK', enable_iq=False, enable_oq=False)
+            einsum_sV = QEinsum(layer._combine_equation, name=f'{layer.name}_aV', enable_iq=False, enable_oq=False)
+
+            tensor_Q = KerasTensor(name=f'{unique_name}_Q', shape=Q_batch_shape)
+            tensor_K = KerasTensor(name=f'{unique_name}_K', shape=K_batch_shape)
+            tensor_V = KerasTensor(name=f'{unique_name}_V', shape=V_batch_shape)
+
+            pre_O_shape = (None, *tensor_q.shape[1:-1], layer.num_heads, layer.value_dim)
+            tensor_pre_O = KerasTensor(name=f'{unique_name}_pre_O', shape=pre_O_shape)
+            # tensor_O = KerasTensor(name=f'{name}_QK', shape=O_batch_shape)
+            tensor_pre_score = KerasTensor(name=f'{unique_name}_pre_score', shape=score_batch_shape)
+            tensor_score = KerasTensor(name=f'{unique_name}_score', shape=score_batch_shape)
+
+            config_to_Q = einsum_dense_handler(to_Q, [tensor_q], [tensor_Q])
+            config_to_K = einsum_dense_handler(to_K, [tensor_k], [tensor_K])
+            config_to_V = einsum_dense_handler(to_V, [tensor_v], [tensor_V])
+            config_einsum_KQ = einsum_handler(einsum_QK, [tensor_K, tensor_Q], [tensor_pre_score])
+            config_softmax = softmax_handler(softmax, [tensor_pre_score], [tensor_score])
+            config_einsum_sV = einsum_handler(einsum_sV, [tensor_score, tensor_V], [tensor_pre_O])
+            config_to_O = einsum_dense_handler(to_O, [tensor_pre_O], [tensor_O])
         
         configs = (
             *config_to_Q,

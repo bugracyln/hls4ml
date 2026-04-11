@@ -817,7 +817,7 @@ class OneAPIWriter(Writer):
                     layer.get_attr('activation') == 'softmax' or layer.get_attr('recurrent_activation') == 'softmax'
                     ) and layer.get_attr('exp_table_size') is not None else 1024
                 
-                #table_size = min(table_size, 2048)
+                table_size //= 2
 
                 with open(f'{path}/{table_name}.h', 'w') as h_file:
 
@@ -825,10 +825,10 @@ class OneAPIWriter(Writer):
                     h_file.write(f'#ifndef {header_name.upper()}_H_\n')
                     h_file.write(f'#define {header_name.upper()}_H_\n\n')
 
-                    #h_file.write(self.__get_table_header(table_name, table_size, table_type='exp_table_t'))
                     h_file.write(f'static constexpr {table_name}_t {table_name}[{table_size}] = {{')
 
-                    ac_type = layer.get_input_variable().type
+                    #ac_type = layer.get_input_variable().type
+                    ac_type = layer.get_attr('inp_norm_t')
 
                     if ac_type is not None:
                         try:
@@ -849,40 +849,6 @@ class OneAPIWriter(Writer):
                         fp_integer = 6
                         fp_signed = True
 
-                    N = ceil_log2(table_size)
-                    assert N <= fp_bits, 'Table size is too large.'
-                    sep = ''
-                    for i in range(table_size):
-                        #f = FixedPointEmulator(N, min(fp_integer,N), signed=fp_signed)
-                        f = FixedPointEmulator(fp_bits, fp_integer, signed=fp_signed)
-                        val = i << (fp_bits - N)
-                        #b = uint_to_binary(val, N)
-                        b = uint_to_binary(val, fp_bits)
-                        f.set_msb_bits(b)
-                        real_val = f.exp_float()
-                        if real_val != 0:
-                            real_val = 1/(real_val)
-                        else:
-                            real_val = 1.0
-                        h_file.write(sep + str(real_val))
-                        sep = ', '
-
-                    """
-                    N = ceil_log2(table_size)
-                    assert N <= (fp_bits + fp_signed), 'Table size is too large.'
-                    frac_bits = (fp_bits - fp_integer)
-                    x_min = -2**N  
-                    x_max = 0
-                    step = (x_max - x_min) / (table_size - 1)
-
-                    sep = ''
-                    for i in range(table_size):
-                        # linear mapping across table
-                        val = x_min + i * step
-                        real_val = np.exp(val/2**frac_bits)
-                        h_file.write(sep + str(real_val))
-                        sep = ', '
-
                     sep = ''
                     N = ceil_log2(table_size)
                     for i in range(table_size):
@@ -894,17 +860,15 @@ class OneAPIWriter(Writer):
                             b.insert(0, 1)
                         f.set_msb_bits(b)
                         real_val = f.exp_float()
-                        if i > table_size - 10:
-                            print(real_val)
                         h_file.write(sep + str(real_val))
-                        sep = ', '"""
-
+                        sep = ', '
+                    
                     h_file.write('};\n\n')
                     h_file.write('#endif')
 
 
     def __write_invert_table(self, model, path):
-
+        import pdb;pdb.set_trace()
         for layer in model.get_layers():
             if 'softmax' in layer.name:
 
@@ -913,7 +877,7 @@ class OneAPIWriter(Writer):
                     layer.get_attr('activation') == 'softmax' or layer.get_attr('recurrent_activation') == 'softmax'
                     ) and layer.get_attr('inv_table_size') is not None else 1024
                 
-                #table_size = min(table_size, 2048)
+                table_size //= 2
                 
                 with open(f'{path}/{table_name}.h', 'w') as h_file:
 
@@ -921,14 +885,8 @@ class OneAPIWriter(Writer):
                     h_file.write(f'#ifndef {header_name.upper()}_H_\n')
                     h_file.write(f'#define {header_name.upper()}_H_\n\n')
 
-                    #h_file.write(self.__get_table_header(table_name, table_size, table_type='inv_table_t'))
                     h_file.write(f'static constexpr {table_name}_t {table_name}[{table_size}] = {{')
 
-                    #ac_type = layer.get_attr('exp_table_t')
-                    #The original wrtier stated that as seen in vivado the inv table should use the same precision as exp table but 
-                    #i am not sure if it is correct to attempt to obtain this proprety by utilising exp_table_t yes both tables will have
-                    #the same percision but what we want is ac_type to be the input value type (x) and not what is written on the table (e^x)
-                    #ac_type = layer.get_input_variable().type
                     ac_type = layer.get_attr('inv_inp_t')
 
                     if ac_type is not None:
@@ -950,35 +908,6 @@ class OneAPIWriter(Writer):
                         fp_integer = 8
                         fp_signed = True
 
-
-                    sep = ''
-                    frac_bits = fp_bits - fp_integer
-                    maxval = 2**(fp_integer) - 2**(-frac_bits) 
-                    step = maxval/(table_size - 1)
-                    N = ceil_log2(table_size)
-                    for i in range(table_size):
-                        #val = i * step
-                        val = i / max(1,(2 ** (frac_bits - fp_bits + N)))
-                        if i == 0:
-                            real_val = maxval
-                        else:
-                            real_val = min(maxval, (1.0 / val))
-                        h_file.write(sep + str(real_val))
-                        sep = ', '
-
-                    """
-                    sep = ''
-                    frac_bits = fp_bits - fp_integer
-                    maxval = 2**fp_integer - 2**(-frac_bits)
-                    for i in range(table_size):
-                        val = i * maxval / (table_size - 1)
-                        if i == 0:
-                            real_val = (i+1) * maxval / (table_size - 1)
-                        else:
-                            real_val = 1.0 / val
-                        h_file.write(sep + str(real_val))
-                        sep = ', '
-
                     sep = ''
                     N = ceil_log2(table_size)
                     for i in range(table_size):
@@ -987,13 +916,8 @@ class OneAPIWriter(Writer):
                         b.insert(0, 0)
                         f.set_msb_bits(b)
                         real_val = f.inv_float()
-
-                        #put max possible value to represent 1/0
-                        if i == 0:
-                            real_val = 2**(fp_integer-1) - 2**(-(fp_bits - fp_integer))
-
                         h_file.write(sep + str(real_val))
-                        sep = ', '"""
+                        sep = ', '
 
                     h_file.write('};\n\n')
                     h_file.write('#endif')

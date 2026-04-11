@@ -24,6 +24,7 @@ class QEinsumHandler(QLayerHandler):
         inp0_shape: tuple[int, ...] = in_tensors[0].shape[1:]  # type: ignore
         inp1_shape: tuple[int, ...] = in_tensors[1].shape[1:]  # type: ignore
         out_shape: tuple[int, ...] = out_tensors[0].shape[1:]  # type: ignore
+        import pdb;pdb.set_trace()
         if out_shape == ():
             out_shape = (1,)  # Scalar output
 
@@ -40,15 +41,8 @@ class QEinsumHandler(QLayerHandler):
         context_len = layer.context_len
         contract_dim = layer.contract_dim
 
-        if context_len > 1:
-            #if contract_dim == 0 and inp0_shape[-1] == inp1_shape[-1]:
-            #    out_shape = out_tensors[0].shape[1:] + tuple([context_len])#tuple([context_len])
-            #elif contract_dim == 0:
-            #    out_shape = tuple([context_len]) + out_tensors[0].shape[1:]
-            #    out_shape = out_tensors[0].shape[1:] + tuple([context_len])
-            #else:
-            if contract_dim == 1:
-                out_shape = inp1_shape
+        if context_len > 1 and contract_dim == 1:
+            out_shape = inp1_shape
         
         print(f'OUT_SHAPE: {out_shape}')
         out_tensors[0]._shape = (out_tensors[0].shape[0],) + out_shape

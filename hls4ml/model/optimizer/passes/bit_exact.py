@@ -786,7 +786,7 @@ def _(node: Activation):
         table_size = int(8 / 2.0**-f)  # LUT Range hardcoded to -4 ~ 4, match #fractional bits
     elif act_fn == 'sigmoid':
         table_size = int(16 / 2.0**-f)  # LUT Range hardcoded to -8 ~ 8, match #fractional bits
-
+        
     node.attributes['table_size'] = table_size
 
 

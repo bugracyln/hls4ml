@@ -154,7 +154,7 @@ def _check_hls_config(config, hls_config):
 
     if 'SkipOptimizers' in hls_config:
         config['HLSConfig']['SkipOptimizers'] = hls_config['SkipOptimizers']
-
+    
     return
 
 

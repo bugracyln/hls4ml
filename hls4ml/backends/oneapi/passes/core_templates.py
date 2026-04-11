@@ -196,7 +196,8 @@ hard_activ_config_template = """struct {type}_config{index} : nnet::activ_config
 
 softmax_config_template = """struct {type}_config{index} : nnet::activ_config {{
     static constexpr unsigned n_in = {n_in};
-    static constexpr unsigned table_size = {table_size};
+    static constexpr unsigned exp_table_size = {exp_table_size};
+    static constexpr unsigned inv_table_size = {inv_table_size};
     static constexpr unsigned io_type = nnet::{iotype};
     static constexpr unsigned reuse_factor = {reuse};
     static constexpr nnet::softmax_implementation implementation = nnet::softmax_implementation::{implementation};
@@ -227,101 +228,6 @@ param_activ_stream_function_template = '{name}.async({param});'
 activ_include_list = ['nnet_utils/nnet_activation.h', 'nnet_utils/nnet_activation_stream.h']
 
 
-# Helpers for populating the config tables:
-'''def create_exp_table(table_size, node):
-
-    exp_table = '{'
-
-    #exp_table_name = node.name + '_exp_table'
-    #table_size = int(node.get_attr('exp_table_size')) if (
-    #    node.get_attr('activation') == 'softmax' or node.get_attr('recurrent_activation') == 'softmax'
-    #    ) and node.get_attr('exp_table_size') is not None else 1024
-    import pdb; pdb.set_trace()
-    ac_type = node.get_input_variable().type
-
-    if ac_type is not None:
-        try:
-            fp_bits = ac_type.precision.integer + ac_type.precision.fractional
-            fp_integer = ac_type.precision.integer
-            fp_signed = ac_type.precision.signed
-        except Exception:
-            # FixedPrecisionType wasn't correctly stored in layer attributes, use default values
-            fp_bits = 16
-            fp_integer = 6
-            fp_signed = True
-
-        if fp_signed is False:
-            raise Exception('Softmax types need to be signed')
-
-    else:
-        fp_bits = 16
-        fp_integer = 6
-        fp_signed = True
-
-    sep = ''
-    N = ceil_log2(table_size)
-    for i in range(table_size):
-        f = FixedPointEmulator(fp_bits, fp_integer, signed=fp_signed)
-        b = uint_to_binary(i, N)
-
-        if i == 0:
-            b.insert(0, 0)
-        else:
-            b.insert(0, 1)
-        f.set_msb_bits(b)
-        real_val = f.exp_float()
-        exp_table += sep + str(real_val)
-        sep = ', '
-
-    return exp_table + '}'
-
-
-def create_inv_table(table_size, node):
-
-    inv_table = '{'
-
-    #inv_table_name = node.name + '_inv_table'
-    #table_size = int(node.get_attr('inv_table_size')) if (
-    #    node.get_attr('activation') == 'softmax' or node.get_attr('recurrent_activation') == 'softmax'
-    #    ) and node.get_attr('inv_table_size') is not None else 1024
-
-    ac_type = node.get_attr('exp_table_t')
-    #ac_type = node.get_input_variable().type
-
-    if ac_type is not None:
-        try:
-            fp_bits = ac_type.precision.integer + ac_type.precision.fractional
-            fp_integer = ac_type.precision.integer
-            fp_signed = ac_type.precision.signed
-        except Exception:
-            # FixedPrecisionType wasn't correctly stored in layer attributes, use default values
-            fp_bits = 18
-            fp_integer = 8
-            fp_signed = True
-
-        #if fp_signed is False:
-        #    raise Exception('Softmax types need to be signed')
-
-    else:
-        fp_bits = 18
-        fp_integer = 8
-        fp_signed = True
-
-    sep = ''
-    N = ceil_log2(table_size)
-    inv_table += f'{table_size}, ' # we set the first term to zero since it is unused (sum > 0 strictly for softmax so no need to store an exteremely large value in BRAM for no reason)
-    for i in range(1,table_size):
-        f = FixedPointEmulator(fp_bits, fp_integer, signed=fp_signed)
-        b = uint_to_binary(i, N)
-        b.insert(0, 0)
-        f.set_msb_bits(b)
-        real_val = f.inv_float()
-        inv_table += sep + str(real_val)
-        sep = ', '
-
-    return inv_table + '}'''
-
-
 class ActivationConfigTemplate(LayerConfigTemplate):
     def __init__(self):
         super().__init__(Activation)
@@ -330,19 +236,35 @@ class ActivationConfigTemplate(LayerConfigTemplate):
     def format(self, node):
         params = self._default_config_params(node)
         params['type'] = node.get_attr('activation')
-
+        
         if params['type'] == 'softmax':
+            import pdb;pdb.set_trace()
+
+            if 'inp_norm_t' not in params:
+                input_t = node.get_input_variable().type.precision
+                width, iwidth, signed = input_t.width, input_t.integer, input_t.signed  # noqa: F841
+                width, iwidth = width - signed, iwidth - signed
+                params['inp_norm_t'] = input_t
+                params['inp_norm_t'].name = f'ac_fixed<{width},{iwidth},{'true' if signed else 'false'},AC_RND,AC_SAT_SYM>'
             
             if params['implementation'] == 'stable':
                 self.template += softmax_config_table_template_stable
             else:
                 self.template += softmax_config_table_template
 
-            assert params['exp_table_size'] == params['inv_table_size'], 'ERROR: exp and inv table sizes should not differ.'
-            params['table_size'] = params['exp_table_size']
+            if 'exp_table_size' in params:
+                params['exp_table_size'] //= 2
+            else:
+                params['exp_table_size'] = 16384
+
+            if 'inv_table_size' in params:
+                params['inv_table_size'] //= 2
+            else:
+                params['inv_table_size'] = 16384
+
             params['exp_table_name'] = node.name + '_exp_table'
             params['inv_table_name'] = node.name + '_inv_table'
-
+        import pdb;pdb.set_trace()
         return self.template.format(**params)
 
 

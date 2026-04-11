@@ -43,7 +43,7 @@ class UnaryLUT(Layer):
         self.set_attr('n_in', inp.size())
         self.table = self.attributes['table_data']
         self.attributes['table_size'] = len(self.table)
-
+        
         self.add_weights_variable(name='table')
 
 

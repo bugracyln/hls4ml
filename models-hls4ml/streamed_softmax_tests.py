@@ -9,9 +9,8 @@ import hgq
 import keras
 from keras.optimizers import AdamW
 import keras.ops as ops
-from keras.layers import Lambda, Reshape
 from hgq.config import LayerConfigScope, QuantizerConfigScope
-from hgq.layers import QEinsum, QEinsumDense, QSoftmax, QMultiHeadAttention
+from hgq.layers import QSoftmax
 from hgq.regularizers import MonoL1
 import hls4ml
 from hls4ml.converters import convert_from_keras_model

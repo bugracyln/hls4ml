@@ -44,6 +44,8 @@ struct config{index} {{
 
 einsum_function_template = 'nnet::einsum<{input0_t}, {input1_t}, {output_t}, {config}>({input0}, {input1}, {output});'
 
+einsum_stream_function_template = 'task_sequence<nnet::causal_einsum<{input0_pipe}, {input1_pipe}, {output_pipe}, {config}>> {name};'
+
 einsum_include_list = ['nnet_utils/nnet_einsum.h', 'nnet_utils/nnet_causal_einsum.h']
 
 
@@ -113,13 +115,14 @@ class EinsumFunctionTemplate(FunctionCallTemplate):
         params = {}
 
         if io_type == 'io_stream':
+            self.template = einsum_stream_function_template
             params['name'] = node.name
             params['input0_pipe'] = node.get_input_variable(node.inputs[0]).pipe_name
             params['input1_pipe'] = node.get_input_variable(node.inputs[1]).pipe_name
             params['output_pipe'] = node.get_output_variable().pipe_name
             params['config'] = f'config{node.index}'
-            
-            return f'task_sequence<nnet::causal_einsum<{params['input0_pipe']}, {params['input1_pipe']}, {params['output_pipe']}, {params['config']}>> {params['name']};'
+            return self.template.format(**params)
+        
         else:
             params['config'] = f'config{node.index}'
             params['input0_t'] = node.get_input_variable(node.inputs[0]).type.name
