@@ -103,7 +103,7 @@ class OneAPIWriter(Writer):
 
         filedir = os.path.dirname(os.path.abspath(__file__))
 
-        # autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+        autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
         maxInvoc = model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
 
         with (
@@ -131,7 +131,45 @@ class OneAPIWriter(Writer):
                 elif '// hls-fpga-machine-learning insert inter-task pipes' in line:
                     newline = line
                     if io_type == 'io_stream':
+
+                        if autoreg_model:
+                            new_layers = []
+                            opt_names = [layer.name for layer in model_outputs]
+                            pipe_template = ('class {pipe_id};\nusing {pipe_name} = '
+                                             'sycl::ext::altera::experimental::pipe<'
+                                             '{pipe_id}, {pipe_var_type}, {pipe_depth}>;\n')
                         for layer in model.get_layers():
+                            #import pdb; pdb.set_trace()
+                            if autoreg_model:
+                                layer_out_var = layer.get_output_variable()
+                                layer_pipe_name = layer_out_var.pipe_name
+                                layer_pipe_id = layer_out_var.pipe_id
+                                layer_pipe_depth = layer_out_var.pragma[1]
+                                layer_pipe_var_type = layer_out_var.type.name
+                                
+                                if layer.inputs == ['input']:
+                                    newline += pipe_template.format(
+                                        pipe_name='SW_' + layer_pipe_name,
+                                        pipe_id='SW_' + layer_pipe_id,
+                                        pipe_depth=layer_pipe_depth,
+                                        pipe_var_type=layer_pipe_var_type,
+                                    )
+
+                                    newline +=  pipe_template.format(
+                                        pipe_name='FB_' + layer_pipe_name,
+                                        pipe_id='FB_' + layer_pipe_id,
+                                        pipe_depth=layer_pipe_depth,
+                                        pipe_var_type=layer_pipe_var_type,
+                                    )
+
+                                elif layer_out_var.name in opt_names:
+                                    newline +=  pipe_template.format(
+                                        pipe_name='SW_' + layer_pipe_name,
+                                        pipe_id='SW_' + layer_pipe_id,
+                                        pipe_depth=layer_pipe_depth,
+                                        pipe_var_type=layer_pipe_var_type,
+                                    )
+                                    
                             vars = layer.get_variables()
                             for var in vars:
                                 if var not in model_inputs and var not in model_outputs:
@@ -155,14 +193,46 @@ class OneAPIWriter(Writer):
                 elif '// hls-fpga-machine-learning declare task sequences' in line:
                     newline = line
                     if io_type == 'io_stream':  # only need this for io_stream
+                        import pdb; pdb.set_trace()
+                        inp_sw = ''
+                        out_sw = ''
+                        if autoreg_model:
+                            inp_sw_pipe_names = ''
+                            out_sw_pipe_names = ''
+                            inp_host_pipe_names = ''
+                            out_host_pipe_names = ''
+                            fb_pipe_names = ''
+
+                            for inp in model_inputs:
+                                inp_host_pipe_names += inp.pipe_name + ','
+                                fb_pipe_names += 'FB_' + inp.pipe_name + ',' # Can use both in/out side pipes to derive this, since both has to be the same type regardless TODO: Add assserrtion for that
+                                inp_sw_pipe_names += 'SW_' + inp.pipe_name + ','
+                                                        
+                            for out in model_outputs:
+                                out_host_pipe_names += out.pipe_name + ','
+                                out_sw_pipe_names += 'SW_' + out.pipe_name + ','
+
+                            inp_sw = f'task_sequence<nnet::input_switch<{inp_host_pipe_names[:-1]},{fb_pipe_names[:-1]},{inp_sw_pipe_names[:-1]}> inp_sw;'
+                            out_sw = f'task_sequence<nnet::input_switch<{out_host_pipe_names[:-1]},{fb_pipe_names[:-1]},{out_sw_pipe_names[:-1]}> out_sw;'
+
+                            newline += '    ' + inp_sw + '\n'
+                            
                         for layer in model.get_layers():
                             ts = layer.get_attr('task_sequence_cpp')
                             if ts:
                                 newline += '    ' + ts + '\n'
 
+                        if autoreg_model:
+                            newline += '    ' + out_sw + '\n'
+
                 # Neural net instantiation
                 elif '// hls-fpga-machine-learning insert layers' in line:
                     newline = line + '\n'
+                    
+                    # Add input swich next to host if model is tagged as autoregressive
+                    if autoreg_model:
+                        newline += '    ' + 'input_switch.async()' + '\n'
+
                     for layer in model.get_layers():
                         if io_type != 'io_stream':
                             vars = layer.get_variables()
@@ -185,6 +255,10 @@ class OneAPIWriter(Writer):
                                         var.type.name, var.name, layer.name, var.size_cpp()
                                     )
                                 newline += '#endif\n'
+
+                    # Add output swich next to host if model is tagged as autoregressive
+                    if autoreg_model:
+                        newline += '    ' + 'output_switch.async()' + '\n'
 
                 # Write the output
                 elif '// hls-fpga-machine-learning return' in line:
@@ -235,6 +309,7 @@ class OneAPIWriter(Writer):
 
                 # Declarations for the inputs. May need modification when io_stream is supported
                 elif '// hls-fpga-machine-learning insert inputs' in line:
+                    import pdb; pdb.set_trace()
                     newline = line
                     for inp in model_inputs:
                         newline += inp.declare_cpp(pipe_min_size=inp.pragma[1] if inp.pragma[0] == 'stream' else 16)
@@ -295,6 +370,10 @@ class OneAPIWriter(Writer):
         Args:
             model (ModelGraph): the hls4ml model.
         """
+
+        io_type = model.config.get_config_value('IOType')
+        autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
         filedir = os.path.dirname(os.path.abspath(__file__))
         with (
             open(os.path.join(filedir, '../templates/oneapi/firmware/parameters.h')) as f,
@@ -303,6 +382,11 @@ class OneAPIWriter(Writer):
             for line in f.readlines():
                 if '// hls-fpga-machine-learning insert includes' in line:
                     newline = line
+
+                    # Include the pipe switches for autoregressive model
+                    if autoreg_model and io_type == 'io_stream':
+                        newline += '#include "nnet_utils/nnet_dma_helpers.h"\n'
+
                     for include in sorted(
                         set(sum((layer.get_attr('include_header', []) for layer in model.get_layers()), []))
                     ):

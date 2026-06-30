@@ -85,6 +85,18 @@ class DenseTaskSequenceTemplate(TaskSequenceTemplate):
         if max_invoc is not None:
             self.template = dense_task_sequence_template_max_invoc
             params['maxInvoc'] = max_invoc
+        
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            if (params['input_pipe'] in model_inp_names):
+                params['input_pipe'] = "SW_" + params['input_pipe']
+                
+            elif (params['output_pipe'] in model_out_names):
+                params['output_pipe'] = "SW_" + params['output_pipe']
 
         return self.template.format(**params)
 
@@ -165,6 +177,18 @@ class BatchNormalizationTaskSequenceTemplate(TaskSequenceTemplate):
         if max_invoc is not None:
             self.template = batchnorm_task_sequence_template_max_invoc
             params['maxInvoc'] = max_invoc
+
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            if (params['input_pipe'] in model_inp_names) or (params['input_pipe'] in model_inp_names):
+                params['input_pipe'] = "SW_" + params['input_pipe']
+                
+            elif (params['output_pipe'] in model_out_names):
+                params['output_pipe'] = "SW_" + params['output_pipe']
 
         return self.template.format(**params)
 
@@ -250,6 +274,7 @@ activ_function_template = 'nnet::{activation}<{input_t}, {output_t}, {config}>({
 param_activ_function_template = 'nnet::{activation}<{input_t}, {output_t}, {config}>({input}, {param}, {output});'
 
 activ_task_sequence_template = 'task_sequence<nnet::{activation}_stream<{input_pipe}, {output_pipe}, {config}>> {name};'
+
 activ_task_sequence_template_max_invoc = (
     'task_sequence<nnet::{activation}_stream<{input_pipe}, {output_pipe}, {config}>,ts_invoc_props> {name};'
 )
@@ -421,6 +446,19 @@ class ActivationTaskSequenceTemplate(TaskSequenceTemplate):
         if max_invoc is not None:
             self.template = activ_task_sequence_template_max_invoc
             params['maxInvoc'] = max_invoc
+        
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            if (params['input_pipe'] in model_inp_names) or (params['input_pipe'] in model_inp_names):
+                params['input_pipe'] = "SW_" + params['input_pipe']
+                
+            elif (params['output_pipe'] in model_out_names):
+                params['output_pipe'] = "SW_" + params['output_pipe']
+
 
         return self.template.format(**params)
 
@@ -439,6 +477,19 @@ class ParametrizedActivationTaskSequenceTemplate(TaskSequenceTemplate):
         if max_invoc is not None:
             self.template = activ_task_sequence_template_max_invoc
             params['maxInvoc'] = max_invoc
+
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            if (params['input_pipe'] in model_inp_names) or (params['input_pipe'] in model_inp_names):
+                params['input_pipe'] = "SW_" + params['input_pipe']
+                
+            elif (params['output_pipe'] in model_out_names):
+                params['output_pipe'] = "SW_" + params['output_pipe']
+        
 
         return self.template.format(**params)
 

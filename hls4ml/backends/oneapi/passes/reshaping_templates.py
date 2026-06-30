@@ -102,6 +102,18 @@ class ZeroPaddingTaskSequenceTemplate(TaskSequenceTemplate):
                 'ZeroPadding2D': zeropad2d_task_sequence_template_max_invoc,
             }
             params['maxInvoc'] = max_invoc
+        
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            if (params['input_pipe'] in model_inp_names) or (params['input_pipe'] in model_inp_names):
+                params['input_pipe'] = "SW_" + params['input_pipe']
+                
+            elif (params['output_pipe'] in model_out_names):
+                params['output_pipe'] = "SW_" + params['output_pipe']
 
         return self.templates[node.class_name].format(**params)
 
@@ -180,6 +192,18 @@ class ResizeTaskSequenceTemplate(TaskSequenceTemplate):
             self.template = resize_task_sequence_template_max_invoc
             params['maxInvoc'] = max_invoc
 
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            if (params['input_pipe'] in model_inp_names) or (params['input_pipe'] in model_inp_names):
+                params['input_pipe'] = "SW_" + params['input_pipe']
+                
+            elif (params['output_pipe'] in model_out_names):
+                params['output_pipe'] = "SW_" + params['output_pipe']
+
         return self.template.format(**params)
 
 
@@ -196,6 +220,7 @@ transpose_config_template = """struct {config_name} : nnet::transpose_config {{
 
 transpose_function_template = 'nnet::transpose<{input_t}, {output_t}, {config}>({input}, {output});'
 transpose_task_sequence_template = 'task_sequence<nnet::transpose_stream<{input_pipe}, {output_pipe}, {config}>> {name};'
+transpose_task_sequence_template_max_invoc = 'task_sequence<nnet::transpose_stream<{input_pipe}, {output_pipe}, {config}>,ts_invoc_props> {name};'
 transpose_include_list = ['nnet_utils/nnet_transpose.h', 'nnet_utils/nnet_transpose_stream.h']
 
 
@@ -233,6 +258,23 @@ class TransposeTaskSequenceTemplate(TaskSequenceTemplate):
     def format(self, node):
         params = self._default_function_params(node)
         params['dim'] = node.get_attr('dim')
+
+        max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
+        if max_invoc is not None:
+            self.template = transpose_task_sequence_template_max_invoc
+            params['maxInvoc'] = max_invoc
+
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            if (params['input_pipe'] in model_inp_names) or (params['input_pipe'] in model_inp_names):
+                params['input_pipe'] = "SW_" + params['input_pipe']
+                
+            elif (params['output_pipe'] in model_out_names):
+                params['output_pipe'] = "SW_" + params['output_pipe']
 
         return self.template.format(**params)
 
@@ -276,5 +318,17 @@ class ReshapeTaskSequenceTemplate(TaskSequenceTemplate):
         if max_invoc is not None:
             self.template = reshape_task_sequence_template_max_invoc
             params['maxInvoc'] = max_invoc
+
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            if (params['input_pipe'] in model_inp_names) or (params['input_pipe'] in model_inp_names):
+                params['input_pipe'] = "SW_" + params['input_pipe']
+                
+            elif (params['output_pipe'] in model_out_names):
+                params['output_pipe'] = "SW_" + params['output_pipe']
 
         return self.template.format(**params)

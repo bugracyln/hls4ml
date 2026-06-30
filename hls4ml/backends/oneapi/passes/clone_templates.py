@@ -25,6 +25,25 @@ class CloneTaskSequenceTemplate(TaskSequenceTemplate):
                 'task_sequence<nnet::clone_stream<{input_pipe},' + f'{output_pipes}, {{size}}>,ts_invoc_props> {{name}};'
             )
             params['maxInvoc'] = max_invoc
+    
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            out_interface = False
+            for i in range(len(node.outputs)):
+                if params[f'output{i + 1}_pipe'] in model_out_names:
+                    out_interface = True 
+                    break
+
+            if (params['input_pipe'] in model_inp_names):
+                params['input_pipe'] = "SW_" + params['input_pipe']
+            
+            elif out_interface:
+                for i in range(len(node.outputs)):
+                    params[f'output{i + 1}_pipe'] = "SW_" + params[f'output{i + 1}_pipe']
 
         return template.format(**params)
 

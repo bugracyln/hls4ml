@@ -1,6 +1,5 @@
 #include "myproject.h"
 #include "parameters.h"
-//#include "nnet_utils/nnet_dma_helpers.h"
 #include <sycl/ext/altera/experimental/task_sequence.hpp>
 
 // hls-fpga-machine-learning insert weights

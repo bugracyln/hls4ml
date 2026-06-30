@@ -149,6 +149,18 @@ class Conv1DTaskSequenceTemplate(TaskSequenceTemplate):
             self.template = conv1d_task_sequence_template_max_invoc
             params['maxInvoc'] = max_invoc
 
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            if (params['input0_pipe'] in model_inp_names):
+                params['input_pipe'] = "SW_" + params['input_pipe']
+                
+            elif (params['output_pipe'] in model_out_names):
+                params['output_pipe'] = "SW_" + params['output_pipe']
+
         return self.template.format(**params)
 
 
@@ -217,6 +229,10 @@ conv2d_task_sequence_template = (
     'task_sequence<nnet::conv_2d_{data_format}_stream<{input_pipe}, {output_pipe}, {config}>> {name};'
 )
 
+conv2d_task_sequence_template_max_invoc = (
+    'task_sequence<nnet::conv_2d_{data_format}_stream<{input_pipe}, {output_pipe}, {config}>,ts_invoc_props>  {name};'
+)
+
 conv2d_include_list = ['nnet_utils/nnet_conv2d.h', 'nnet_utils/nnet_conv2d_stream.h']
 
 
@@ -273,6 +289,24 @@ class Conv2DTaskSequenceTemplate(TaskSequenceTemplate):
         if node.get_attr('data_format') == 'channels_first':
             raise RuntimeError('channels_first not supported on oneAPI')
         params['data_format'] = 'cl'
+
+        max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
+        if max_invoc is not None:
+            self.template = conv2d_task_sequence_template_max_invoc
+            params['maxInvoc'] = max_invoc
+
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            if (params['input_pipe'] in model_inp_names):
+                params['input_pipe'] = "SW_" + params['input_pipe']
+
+            elif (params['output_pipe'] in model_out_names):
+                params['output_pipe'] = "SW_" + params['output_pipe']
+            
         return self.template.format(**params)
 
 

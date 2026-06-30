@@ -196,6 +196,20 @@ class EinsumStreamTaskSequenceTemplate(TaskSequenceTemplate):
         params = self._default_function_params(node)
         params['input0_pipe'] = node.get_input_variable(node.inputs[0]).pipe_name
         params['input1_pipe'] = node.get_input_variable(node.inputs[1]).pipe_name
+
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+
+        if autoreg_model:
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
+
+            if (params['input0_pipe'] in model_inp_names) or (params['input1_pipe'] in model_inp_names):
+                params['input0_pipe'] = "SW_" + params['input0_pipe']
+                params['input1_pipe'] = "SW_" + params['input1_pipe']
+                
+            elif (params['output_pipe'] in model_out_names):
+                params['output_pipe'] = "SW_" + params['output_pipe']
+
         if node.get_attr('data_format') == 'channels_first':
             raise RuntimeError('channels_first not supported on oneAPI')
         params['data_format'] = 'cl'
