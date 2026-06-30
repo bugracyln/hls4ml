@@ -216,7 +216,9 @@ softmax_config_template = """struct {type}_config{index} : nnet::activ_config {{
     static constexpr unsigned inv_table_size = {inv_table_size};
     static constexpr unsigned io_type = nnet::{iotype};
     static constexpr unsigned reuse_factor = {reuse};
+
     static constexpr nnet::softmax_implementation implementation = nnet::softmax_implementation::{implementation};
+    typedef {smax_accum_t} accum_t;
     typedef {exp_table_t.name} exp_table_t;
     typedef {inv_table_t.name} inv_table_t;"""
 
@@ -233,14 +235,6 @@ softmax_config_table_template = """
     static constexpr const {exp_table_name}_arr_t exp_table = {exp_table_name};
     static constexpr const {inv_table_name}_arr_t invert_table = {inv_table_name};
 }};\n"""
-
-# softmax_config_table_template_stable = """
-#    typedef {inv_inp_t.name} inv_inp_t;
-#    typedef {inp_norm_t.name} inp_norm_t;
-#
-#    static constexpr const exp_table_t *exp_table = &{exp_table_name}[0];
-#    static constexpr const inv_table_t *invert_table = &{inv_table_name}[0];
-# }};\n"""
 
 softmax_config_table_template_stable = """
     typedef {inv_inp_t.name} inv_inp_t;
@@ -275,16 +269,27 @@ class ActivationConfigTemplate(LayerConfigTemplate):
         params['type'] = node.get_attr('activation')
 
         if params['type'] == 'softmax':
-            if 'exp_table_size' in params:
+            # The lookup input (x - x_max) is always <= 0, so only the negative half
+            if 'exp_table_size' in params and params['exp_table_size'] is not None:
                 params['exp_table_size'] //= 2
             else:
-                params['exp_table_size'] = 1024
-
+                # Use the default precision
+                params['exp_table_size'] = 2 ** (params['table_t'].precision.width - 1)
                 params['exp_table_t'].precision.width = ceil_log2(params['exp_table_size'])
-                params['exp_table_t'].precision.integer = 3
+                params['exp_table_t'].precision.integer = params['table_t'].precision.integer - 1
                 params['exp_table_t'].precision.signed = False
 
-            params.setdefault('table_size', params['exp_table_size'])
+            params.setdefault('table_size', params['exp_table_size'])  # Not sure if necessary
+
+            # Determine accumulator type if present, else derive it yourself based on the input size.
+            if params['accum_t'].name == 'model_default_t':
+                extra_bits_req = ceil_log2(params['n_in'])
+                s = 'true' if params['exp_table_t'].precision.signed else 'false'
+                w = params['exp_table_t'].precision.width + extra_bits_req
+                i = params['exp_table_t'].precision.integer + extra_bits_req
+                params['smax_accum_t'] = f'ac_fixed<{str(w)},{str(i)},{s}>'
+            else:
+                params['smax_accum_t'] = params['accum_t'].name
 
             if 'inp_norm_t' not in params:
                 input_t = node.get_input_variable().type.precision
@@ -294,24 +299,26 @@ class ActivationConfigTemplate(LayerConfigTemplate):
 
                 params['inp_norm_t'] = copy.deepcopy(params['exp_table_t'])  # assign type,later override
 
-                # this checks if table sizes will be default, if it is just use the table size to derive precision
+                # This checks if table sizes will be default, if it is just use the table size to derive precision
                 if 'inv_table_size' not in params:
                     params['inp_norm_t'].precision.width = params['exp_table_t'].precision.width + 1
                     params['inp_norm_t'].precision.integer = params['exp_table_t'].precision.integer + 1
                     params['inp_norm_t'].precision.signed = True
                     params['inp_norm_t'].name = f'{node.name}_inp_norm_t'
                 else:
-                    params['inp_norm_t'].name = f'ac_fixed<{width},{iwidth},{str(signed).lower()},AC_RND,AC_SAT_SYM>'
+                    params[
+                        'inp_norm_t'
+                    ].name = f'ac_fixed<{width},{iwidth},{"true" if signed else "false"},AC_RND,AC_SAT_SYM>'
 
                 node.set_attr('inp_norm_t', params['inp_norm_t'])
 
+            # Again we only look up 1/sum(e^x) which is >=0 so no need the entie address space
             if 'inv_table_size' in params:
                 params['inv_table_size'] //= 2
             else:
-                params['inv_table_size'] = 1024
-
+                params['inv_table_size'] = 2 ** (params['table_t'].precision.width - 1)
                 params['inv_table_t'].precision.width = ceil_log2(params['inv_table_size'])
-                params['inv_table_t'].precision.integer = 3
+                params['inv_table_t'].precision.integer = params['table_t'].precision.integer - 1
                 params['inv_table_t'].precision.signed = False
 
                 params['inv_inp_t'].precision.width = params['inv_table_t'].precision.width + 1
