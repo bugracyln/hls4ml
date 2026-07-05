@@ -6,7 +6,7 @@
 
 // The inter-task pipes need to be declared in the global scope
 // hls-fpga-machine-learning insert inter-task pipes
-
+// hls-fpga-machine-learning define switch pipe groups
 // hls-fpga-machine-learning insert invocation props
 
 using sycl::ext::altera::experimental::task_sequence;

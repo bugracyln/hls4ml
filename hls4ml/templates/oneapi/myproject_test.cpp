@@ -24,7 +24,7 @@
 
 // This lib is irrelevant to Altera HLS
 #if (__INTEL_CLANG_COMPILER < 20250000)
-//#include <sycl/ext/intel/prototype/interfaces.hpp>
+//#include <sycl/ext/altera/prototype/interfaces.hpp>
 #endif
 
 #include "exception_handler.hpp"

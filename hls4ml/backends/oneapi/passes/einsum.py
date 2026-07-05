@@ -197,7 +197,7 @@ class EinsumStreamTaskSequenceTemplate(TaskSequenceTemplate):
         params['input0_pipe'] = node.get_input_variable(node.inputs[0]).pipe_name
         params['input1_pipe'] = node.get_input_variable(node.inputs[1]).pipe_name
 
-        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         if autoreg_model:
             model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 

@@ -26,7 +26,7 @@ class CloneTaskSequenceTemplate(TaskSequenceTemplate):
             )
             params['maxInvoc'] = max_invoc
     
-        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         if autoreg_model:
             model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 

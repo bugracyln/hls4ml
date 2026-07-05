@@ -168,7 +168,7 @@ class PoolingTaskSequenceTemplate(TaskSequenceTemplate):
             }
             params['maxInvoc'] = max_invoc
         
-        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+        autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         # TODO: CHECK IF THIS WORKS IN THIS FORMAT, NOT SURE NOT TESTED YET
         if autoreg_model:

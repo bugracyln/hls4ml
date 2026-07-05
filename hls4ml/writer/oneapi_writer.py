@@ -103,8 +103,9 @@ class OneAPIWriter(Writer):
 
         filedir = os.path.dirname(os.path.abspath(__file__))
 
-        autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+        autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
         maxInvoc = model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
+        invoc_props = ',ts_invoc_props>' if maxInvoc is not None else '>'
 
         with (
             open(os.path.join(filedir, '../templates/oneapi/firmware/myproject.cpp')) as f,
@@ -138,8 +139,9 @@ class OneAPIWriter(Writer):
                             pipe_template = ('class {pipe_id};\nusing {pipe_name} = '
                                              'sycl::ext::altera::experimental::pipe<'
                                              '{pipe_id}, {pipe_var_type}, {pipe_depth}>;\n')
-                        for layer in model.get_layers():
-                            #import pdb; pdb.set_trace()
+                            
+                        for idx, layer in enumerate(model.get_layers()):
+
                             if autoreg_model:
                                 layer_out_var = layer.get_output_variable()
                                 layer_pipe_name = layer_out_var.pipe_name
@@ -162,6 +164,14 @@ class OneAPIWriter(Writer):
                                         pipe_var_type=layer_pipe_var_type,
                                     )
 
+                                    newline +=  pipe_template.format(
+                                        pipe_name= f'SwitchControl{idx}',
+                                        pipe_id= f'SwitchControl{idx}ID',
+                                        pipe_depth=layer_pipe_depth,
+                                        pipe_var_type='unsigned',
+                                    )
+
+
                                 elif layer_out_var.name in opt_names:
                                     newline +=  pipe_template.format(
                                         pipe_name='SW_' + layer_pipe_name,
@@ -174,6 +184,8 @@ class OneAPIWriter(Writer):
                             for var in vars:
                                 if var not in model_inputs and var not in model_outputs:
                                     newline += var.declare_cpp()
+                            
+                            newline += '\n'
 
                 elif '// hls-fpga-machine-learning insert invocation props' in line and maxInvoc is not None:
                     newline = line
@@ -189,33 +201,64 @@ class OneAPIWriter(Writer):
                             newline += indent + f'auto {inp.name} = {inp.pipe_name}::read();\n'
                     # for streaming we don't need to read it in
 
+                #TODO: NOT USED - DISCARD THIS PART
+                elif '// ssssshls-fpga-machine-learning define switch pipe groups' in line and io_type == 'io_stream' and autoreg_model:
+                    newline = line
+                    inp_sw = ''
+                    out_sw = ''
+        
+                    inp_sw_pipe_names = []
+                    out_sw_pipe_names = []
+                    inp_host_pipe_names = []
+                    out_host_pipe_names = []
+                    fb_pipe_names = []
+
+                    for inp in model_inputs:
+                        inp_host_pipe_names.append(inp.pipe_name)
+                        fb_pipe_names.append('FB_' + inp.pipe_name) # Can use both in/out side pipes to derive this, since both has to be the same type regardless TODO: Add assserrtion for that
+                        inp_sw_pipe_names.append('SW_' + inp.pipe_name)
+                                                
+                    for out in model_outputs:
+                        out_host_pipe_names.append(out.pipe_name)
+                        out_sw_pipe_names.append('SW_' + out.pipe_name)
+
+                    assert len(inp_host_pipe_names) == len(out_host_pipe_names), 'Output is not feeding back the correct number of inputs.'
+                    
+                    # Group together inputs for elliptic expressions for the switches, the format is: host_pipes, fb_pipes, sw_pipes
+                    for i in range(len(fb_pipe_names)):
+                        newline += f'SwitchSet<{inp_host_pipe_names[i]},{fb_pipe_names[i]},{inp_sw_pipe_names[i]}> inPipeSet{i};\n'
+                        newline += f'SwitchSet<{out_host_pipe_names[i]},{fb_pipe_names[i]},{out_sw_pipe_names[i]}> outPipeSet{i};\n\n'
+
                 # Insert task sequences
                 elif '// hls-fpga-machine-learning declare task sequences' in line:
                     newline = line
                     if io_type == 'io_stream':  # only need this for io_stream
-                        import pdb; pdb.set_trace()
                         inp_sw = ''
                         out_sw = ''
+
                         if autoreg_model:
-                            inp_sw_pipe_names = ''
-                            out_sw_pipe_names = ''
-                            inp_host_pipe_names = ''
-                            out_host_pipe_names = ''
-                            fb_pipe_names = ''
 
-                            for inp in model_inputs:
-                                inp_host_pipe_names += inp.pipe_name + ','
-                                fb_pipe_names += 'FB_' + inp.pipe_name + ',' # Can use both in/out side pipes to derive this, since both has to be the same type regardless TODO: Add assserrtion for that
-                                inp_sw_pipe_names += 'SW_' + inp.pipe_name + ','
-                                                        
-                            for out in model_outputs:
-                                out_host_pipe_names += out.pipe_name + ','
-                                out_sw_pipe_names += 'SW_' + out.pipe_name + ','
+                            #assert len(model_inputs) == len(model_outputs), 'Output is not feeding back the correct number of inputs.'
 
-                            inp_sw = f'task_sequence<nnet::input_switch<{inp_host_pipe_names[:-1]},{fb_pipe_names[:-1]},{inp_sw_pipe_names[:-1]}> inp_sw;'
-                            out_sw = f'task_sequence<nnet::input_switch<{out_host_pipe_names[:-1]},{fb_pipe_names[:-1]},{out_sw_pipe_names[:-1]}> out_sw;'
+                            for idx, inp in enumerate(model_inputs):
+                                name = inp.pipe_name
+                                in_ts = f'task_sequence<nnet::input_switch<{name}, {'FB_' + name}, {'SW_' + name}, SwitchControl{idx}, switch_config>{invoc_props} inp_sw{idx};'
+                                newline += '    ' + in_ts + '\n'
+                                                    
 
-                            newline += '    ' + inp_sw + '\n'
+                            #inp_sw = ''
+                            #out_sw = ''
+                            #inp_sw_pipe_names = []
+                            #out_sw_pipe_names = []
+                            #inp_host_pipe_names = []
+                            #out_host_pipe_names = []
+                            #fb_pipe_names = []
+                            # Can use both inputs and outputs to size this ideally they should equal in autoreg case
+                            #inPipeSets = ','.join([f'inPipeSet{i}' for i in range(len(model_inputs))])
+                            #outPipeSets = ','.join([f'outPipeSet{i}' for i in range(len(model_outputs))])
+                            #inp_sw = f'task_sequence<nnet::input_switch<{inPipeSets}> inp_sw;'
+                            #out_sw = f'task_sequence<nnet::output_switch<{outPipeSets}> out_sw;'
+                            #newline += '    ' + inp_sw + '\n'
                             
                         for layer in model.get_layers():
                             ts = layer.get_attr('task_sequence_cpp')
@@ -223,7 +266,10 @@ class OneAPIWriter(Writer):
                                 newline += '    ' + ts + '\n'
 
                         if autoreg_model:
-                            newline += '    ' + out_sw + '\n'
+                            for idx, out in enumerate(model_outputs):
+                                name = out.pipe_name
+                                out_ts = f'task_sequence<nnet::output_switch<{name}, {'FB_' + model_inputs[idx].pipe_name}, {'SW_' + name}, SwitchControl{idx}>{invoc_props} out_sw{idx};'
+                                newline += '    ' + out_ts + '\n'
 
                 # Neural net instantiation
                 elif '// hls-fpga-machine-learning insert layers' in line:
@@ -231,7 +277,8 @@ class OneAPIWriter(Writer):
                     
                     # Add input swich next to host if model is tagged as autoregressive
                     if autoreg_model:
-                        newline += '    ' + 'input_switch.async()' + '\n'
+                        for idx in range(len(model_inputs)):
+                            newline += '    ' + f'inp_sw{idx}.async()' + '\n'
 
                     for layer in model.get_layers():
                         if io_type != 'io_stream':
@@ -258,7 +305,8 @@ class OneAPIWriter(Writer):
 
                     # Add output swich next to host if model is tagged as autoregressive
                     if autoreg_model:
-                        newline += '    ' + 'output_switch.async()' + '\n'
+                        for idx in range(len(model_outputs)):
+                            newline += '    ' + f'out_sw{idx}.async()' + '\n'
 
                 # Write the output
                 elif '// hls-fpga-machine-learning return' in line:
@@ -309,7 +357,6 @@ class OneAPIWriter(Writer):
 
                 # Declarations for the inputs. May need modification when io_stream is supported
                 elif '// hls-fpga-machine-learning insert inputs' in line:
-                    import pdb; pdb.set_trace()
                     newline = line
                     for inp in model_inputs:
                         newline += inp.declare_cpp(pipe_min_size=inp.pragma[1] if inp.pragma[0] == 'stream' else 16)
@@ -351,7 +398,6 @@ class OneAPIWriter(Writer):
                     all_precision = OrderedDict()
                     for layer in model.get_layers():
                         layer_precision = layer.get_layer_precision()
-                        # import pdb; pdb.set_trace()
                         for type_name, type_var in layer_precision.items():
                             # Ensure that layer's types doesn't override existing types
                             # This can happen in case of InplaceVariable types
@@ -372,7 +418,8 @@ class OneAPIWriter(Writer):
         """
 
         io_type = model.config.get_config_value('IOType')
-        autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+        autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
+        model_inputs = model.get_input_variables()
 
         filedir = os.path.dirname(os.path.abspath(__file__))
         with (
@@ -398,6 +445,25 @@ class OneAPIWriter(Writer):
 
                 elif '// hls-fpga-machine-learning insert layer-config' in line:
                     newline = line
+
+                    if autoreg_model:
+                        autoreg = model.config.get_config_value('HLSConfig')['Autoregressive']
+
+                        assert type(autoreg) is dict, ("Wrong type passed to autoregressive config, "
+                        "it must be a dictionary with 'SwitchStateID' and 'StopStateID' arguments.")
+
+                        switch_id =  model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('SwitchStateID', None)
+                        stop_id =  model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('StopStateID', None)
+
+                        assert (switch_id is not None) and (stop_id is not None), ("Switch/Stop conditions are undefined, "
+                        "pass those as dictionary arguments: 'SwitchStateID' and 'StopStateID'")
+
+                        indent = ' ' * (len(line) - len(line.lstrip(' ')))
+                        newline += f'struct switch_config {{\n'
+                        newline += indent + f'static constexpr unsigned switch_id = {switch_id};\n'
+                        newline += indent + f'static constexpr unsigned stop_id = {stop_id};\n'
+                        newline += '};\n\n'
+
                     for layer in model.get_layers():
                         config = layer.get_attr('config_cpp', None)
                         if config:
