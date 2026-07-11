@@ -15,8 +15,6 @@
 
 #include <sycl/ext/altera/fpga_extensions.hpp>
 
-// hls-fpga-machine-learning use host_reads
-
 // For data collection
 #include <errno.h>
 #include <sys/stat.h>
@@ -90,7 +88,7 @@ int main(int argc, char **argv) {
 #define TOTAL_TOKENS 48
 #define GENERATE_TOKENS (TOTAL_TOKENS - PREFILL_TOKENS)
 
-#if HOST_READS
+#ifdef HOST_READS
 
     // hls-fpga-machine-learning crete host mems
 

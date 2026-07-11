@@ -104,6 +104,7 @@ class OneAPIWriter(Writer):
         filedir = os.path.dirname(os.path.abspath(__file__))
 
         autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
+        inp_pos_stream: bool =  model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('InpPosStream', False) if autoreg_model else False
         maxInvoc = model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
         invoc_props = ',ts_invoc_props>' if maxInvoc is not None else '>'
 
@@ -157,6 +158,14 @@ class OneAPIWriter(Writer):
                                         pipe_var_type=layer_pipe_var_type,
                                     )
 
+                                    if inp_pos_stream:
+                                        newline +=  pipe_template.format(
+                                            pipe_name='SW_POS_' + layer_pipe_name,
+                                            pipe_id='SW_POS_' + layer_pipe_id,
+                                            pipe_depth=layer_pipe_depth,
+                                            pipe_var_type=layer_pipe_var_type, # TODO - DETERMINE SEPERATE TYPE FOR POS?
+                                        )
+
                                     newline +=  pipe_template.format(
                                         pipe_name='FB_' + layer_pipe_name,
                                         pipe_id='FB_' + layer_pipe_id,
@@ -168,9 +177,8 @@ class OneAPIWriter(Writer):
                                         pipe_name= f'SwitchControl{idx}',
                                         pipe_id= f'SwitchControl{idx}ID',
                                         pipe_depth=layer_pipe_depth,
-                                        pipe_var_type='unsigned',
+                                        pipe_var_type='nnet::SignalPack',
                                     )
-
 
                                 elif layer_out_var.name in opt_names:
                                     newline +=  pipe_template.format(
@@ -201,34 +209,6 @@ class OneAPIWriter(Writer):
                             newline += indent + f'auto {inp.name} = {inp.pipe_name}::read();\n'
                     # for streaming we don't need to read it in
 
-                #TODO: NOT USED - DISCARD THIS PART
-                elif '// ssssshls-fpga-machine-learning define switch pipe groups' in line and io_type == 'io_stream' and autoreg_model:
-                    newline = line
-                    inp_sw = ''
-                    out_sw = ''
-        
-                    inp_sw_pipe_names = []
-                    out_sw_pipe_names = []
-                    inp_host_pipe_names = []
-                    out_host_pipe_names = []
-                    fb_pipe_names = []
-
-                    for inp in model_inputs:
-                        inp_host_pipe_names.append(inp.pipe_name)
-                        fb_pipe_names.append('FB_' + inp.pipe_name) # Can use both in/out side pipes to derive this, since both has to be the same type regardless TODO: Add assserrtion for that
-                        inp_sw_pipe_names.append('SW_' + inp.pipe_name)
-                                                
-                    for out in model_outputs:
-                        out_host_pipe_names.append(out.pipe_name)
-                        out_sw_pipe_names.append('SW_' + out.pipe_name)
-
-                    assert len(inp_host_pipe_names) == len(out_host_pipe_names), 'Output is not feeding back the correct number of inputs.'
-                    
-                    # Group together inputs for elliptic expressions for the switches, the format is: host_pipes, fb_pipes, sw_pipes
-                    for i in range(len(fb_pipe_names)):
-                        newline += f'SwitchSet<{inp_host_pipe_names[i]},{fb_pipe_names[i]},{inp_sw_pipe_names[i]}> inPipeSet{i};\n'
-                        newline += f'SwitchSet<{out_host_pipe_names[i]},{fb_pipe_names[i]},{out_sw_pipe_names[i]}> outPipeSet{i};\n\n'
-
                 # Insert task sequences
                 elif '// hls-fpga-machine-learning declare task sequences' in line:
                     newline = line
@@ -242,24 +222,12 @@ class OneAPIWriter(Writer):
 
                             for idx, inp in enumerate(model_inputs):
                                 name = inp.pipe_name
-                                in_ts = f'task_sequence<nnet::input_switch<{name}, {'FB_' + name}, {'SW_' + name}, SwitchControl{idx}, switch_config>{invoc_props} inp_sw{idx};'
+                                if inp_pos_stream:
+                                    in_ts = f'task_sequence<nnet::input_switch<{name}, {'FB_' + name}, {'SW_' + name}, {'SW_POS_' + name}, SwitchControl{idx}, switch_config>{invoc_props} inp_sw{idx};'
+                                else:
+                                    in_ts = f'task_sequence<nnet::input_switch<{name}, {'FB_' + name}, {'SW_' + name}, SwitchControl{idx}, switch_config>{invoc_props} inp_sw{idx};'
                                 newline += '    ' + in_ts + '\n'
-                                                    
-
-                            #inp_sw = ''
-                            #out_sw = ''
-                            #inp_sw_pipe_names = []
-                            #out_sw_pipe_names = []
-                            #inp_host_pipe_names = []
-                            #out_host_pipe_names = []
-                            #fb_pipe_names = []
-                            # Can use both inputs and outputs to size this ideally they should equal in autoreg case
-                            #inPipeSets = ','.join([f'inPipeSet{i}' for i in range(len(model_inputs))])
-                            #outPipeSets = ','.join([f'outPipeSet{i}' for i in range(len(model_outputs))])
-                            #inp_sw = f'task_sequence<nnet::input_switch<{inPipeSets}> inp_sw;'
-                            #out_sw = f'task_sequence<nnet::output_switch<{outPipeSets}> out_sw;'
-                            #newline += '    ' + inp_sw + '\n'
-                            
+                                                
                         for layer in model.get_layers():
                             ts = layer.get_attr('task_sequence_cpp')
                             if ts:
@@ -268,7 +236,7 @@ class OneAPIWriter(Writer):
                         if autoreg_model:
                             for idx, out in enumerate(model_outputs):
                                 name = out.pipe_name
-                                out_ts = f'task_sequence<nnet::output_switch<{name}, {'FB_' + model_inputs[idx].pipe_name}, {'SW_' + name}, SwitchControl{idx}>{invoc_props} out_sw{idx};'
+                                out_ts = f'task_sequence<nnet::output_switch<{name}, {'FB_' + model_inputs[idx].pipe_name}, {'SW_' + name}, SwitchControl{idx}, switch_config>{invoc_props} out_sw{idx};'
                                 newline += '    ' + out_ts + '\n'
 
                 # Neural net instantiation
@@ -454,6 +422,8 @@ class OneAPIWriter(Writer):
 
                         switch_id =  model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('SwitchStateID', None)
                         stop_id =  model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('StopStateID', None)
+                        argmax =  model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('Argmax', False) if autoreg_model else False
+                        argmax = 'false' if argmax != True else 'true'
 
                         assert (switch_id is not None) and (stop_id is not None), ("Switch/Stop conditions are undefined, "
                         "pass those as dictionary arguments: 'SwitchStateID' and 'StopStateID'")
@@ -462,6 +432,7 @@ class OneAPIWriter(Writer):
                         newline += f'struct switch_config {{\n'
                         newline += indent + f'static constexpr unsigned switch_id = {switch_id};\n'
                         newline += indent + f'static constexpr unsigned stop_id = {stop_id};\n'
+                        newline += indent + f'static constexpr bool argmax = {argmax};\n'
                         newline += '};\n\n'
 
                     for layer in model.get_layers():
@@ -551,12 +522,13 @@ class OneAPIWriter(Writer):
                 elif 'MyProject' in line:
                     newline = line.replace('MyProject', convert_to_pascal_case(project_name))
 
-                elif '// hls-fpga-machine-learning use host_reads' in line:
-                    newline = line
-                    if host_rw_model:
-                        newline += '#define HOST_READS 1\n'
-                    else:
-                        newline += '#define HOST_READS 0\n'
+                #TODO- Check and remove this since now this is moved to cmake file definition, its cleaner
+                #elif '// hls-fpga-machine-learning use host_reads' in line:
+                #    newline = line
+                #    if host_rw_model:
+                #        newline += '#define HOST_READS 1\n'
+                #    else:
+                #        newline += '#define HOST_READS 0\n'
 
                 elif '// hls-fpga-machine-learning crete host mems' in line and host_rw_model:
                     newline = line
@@ -915,6 +887,9 @@ class OneAPIWriter(Writer):
             model (ModelGraph): the hls4ml model.
         """
 
+        autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
+        host_rw_model: bool = model.config.get_config_value('HLSConfig').setdefault('HostRW', 0)
+
         # Makefile
         filedir = os.path.dirname(os.path.abspath(__file__))
         device = model.config.get_config_value('Part')
@@ -935,6 +910,13 @@ class OneAPIWriter(Writer):
                     line += f'set(USER_FPGA_FLAGS -Xsclock={period}ns; ${{USER_FPGA_FLAGS}})\n'
                     if not hyper:
                         line += 'set(USER_FPGA_FLAGS -Xsoptimize=latency; ${USER_FPGA_FLAGS})\n'
+
+                if 'project(' in line:
+                    line = line.replace('myproject', model.config.get_project_name()) 
+                    if autoreg_model:
+                        line += f'\n\nadd_compile_definitions(AUTOREG)\n'
+                    if host_rw_model:
+                        line += f'add_compile_definitions(HOST_READS)\n' #TODO - TEST THESE COMPILE TIME DEFINITIONS
 
                 fout.write(line)
 

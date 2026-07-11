@@ -272,19 +272,44 @@ SoftsignActLoop:
 
 template <class data_pipe, class res_pipe, typename CONFIG_T> void softmax_stable_stream() {
 
+#ifdef AUTOREG
+    using data_packet_t = typename ExtractPipeType<data_pipe>::value_type;
+    using input_arr_t = typename data_packet_t::data_type;
+#else
     using input_arr_t = typename ExtractPipeType<data_pipe>::value_type;
-    using input_t = typename ExtractPipeType<data_pipe>::value_type::value_type;
-    constexpr unsigned input_arr_size = std::tuple_size<input_arr_t>{};
+#endif
 
+    using input_t = typename input_arr_t::value_type;
+    constexpr unsigned input_arr_size = std::tuple_size<input_arr_t>{};
     constexpr unsigned multiplier_limit = DIV_ROUNDUP(input_arr_size, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = input_arr_size / multiplier_limit;
 
     [[intel::fpga_register]] input_t data_array[input_arr_size];
+    
 
 SoftmaxArrayLoop:
+
+#ifdef AUTOREG
+    while (true) {
+
+        typename ExtractPipeType<res_pipe>::value_type out_pack;
+
+        auto in_data_pack = data_pipe::read();
+        auto in_pack = in_data_pack.data;
+
+        if (in_data_pack.exit_task) {
+            out_pack.exit_task = true;
+            res_pipe::write(out_pack);
+            break;
+        }
+#else
     //[[intel::initiation_interval(pipeline)]]
     for (unsigned i = 0; i < CONFIG_T::n_in / input_arr_size; i++) {
+
+        typename ExtractPipeType<res_pipe>::value_type out_pack;
+
         auto in_pack = data_pipe::read();
+#endif
 
     SoftmaxArrayPackLoop:
         #pragma unroll
@@ -322,40 +347,68 @@ SoftmaxArrayLoop:
             CONFIG_T::invert_table[softmax_stable_idx_from_real_val<typename CONFIG_T::inv_inp_t, CONFIG_T::inv_table_size>(
                 exp_sum)];
 
-        typename ExtractPipeType<res_pipe>::value_type out_pack;
-
+        
     SoftmaxInvPackLoop:
         #pragma unroll
         for (unsigned j = 0; j < std::tuple_size<typename ExtractPipeType<res_pipe>::value_type>{}; j++) {
+#ifdef AUTOREG
+            out_pack.data[j] = exp_res[j] * inv_exp_sum;
+#else
             out_pack[j] = exp_res[j] * inv_exp_sum;
+#endif
         }
-
+#ifdef AUTOREG
+        out_pack.exit_task = false;
+#endif
         res_pipe::write(out_pack);
     }
 }
 
-template <class data_pipe, class res_pipe, typename CONFIG_T> void softmax_latency_stream() {
+template<class data_pipe, class res_pipe, typename CONFIG_T> void softmax_latency_stream() {
 #include "activation_tables/exp_table_latency.tb"
 #include "activation_tables/invert_table_latency.tb"
 
+#ifdef AUTOREG
+    using data_packet_t = typename ExtractPipeType<data_pipe>::value_type;
+    using input_arr_t = typename data_packet_t::data_type;
+
+#else
+    using input_arr_t = typename ExtractPipeType<data_pipe>::value_type;
+#endif
+
+    constexpr unsigned input_arr_size = std::tuple_size<input_arr_t>{};
+
     constexpr unsigned multiplier_limit =
-        DIV_ROUNDUP(std::tuple_size<typename ExtractPipeType<data_pipe>::value_type>{}, CONFIG_T::reuse_factor);
-    constexpr unsigned pipeline = std::tuple_size<typename ExtractPipeType<data_pipe>::value_type>{} / multiplier_limit;
+        DIV_ROUNDUP(input_arr_size, CONFIG_T::reuse_factor);
+    constexpr unsigned pipeline = input_arr_size / multiplier_limit;
 
     // Calculate all the e^x's
     [[intel::fpga_register]]
-    typename CONFIG_T::exp_table_t exp_res[std::tuple_size<typename ExtractPipeType<data_pipe>::value_type>{}];
+    typename CONFIG_T::exp_table_t exp_res[input_arr_size];
 
-SoftmaxExpLoop:
-    [[intel::initiation_interval(pipeline)]] for (unsigned i = 0;
-                                                  i < CONFIG_T::n_in /
-                                                          std::tuple_size<typename ExtractPipeType<data_pipe>::value_type>{};
-                                                  i++) {
+SoftmaxExpLoop:    
+
+#ifdef AUTOREG
+    while (true) {
+
+        typename ExtractPipeType<res_pipe>::value_type out_pack;
+
+        auto in_data_pack = data_pipe::read();
+        auto in_pack = in_data_pack.data;
+
+        if (in_data_pack.exit_task) {
+            out_pack.exit_task = true;
+            res_pipe::write(out_pack);
+            break;
+        }
+#else
+    [[intel::initiation_interval(pipeline)]] 
+    for (unsigned i = 0; i < CONFIG_T::n_in / input_arr_size; i++) {
         auto in_pack = data_pipe::read();
 
     SoftmaxExpPackLoop:
         #pragma unroll
-        for (unsigned j = 0; j < std::tuple_size<typename ExtractPipeType<data_pipe>::value_type>{}; j++) {
+        for (unsigned j = 0; j < input_arr_size; j++) {
             exp_res[j] = exp_table_latency[softmax_latency_idx_from_real_val<
                 typename ExtractPipeType<data_pipe>::value_type::value_type, CONFIG_T>(in_pack[j])];
         }
@@ -375,9 +428,15 @@ SoftmaxExpLoop:
         #pragma unroll
         for (unsigned j = 0; j < std::tuple_size<typename ExtractPipeType<res_pipe>::value_type>{}; j++) {
             // #pragma HLS ALLOCATION instances=mul limit=multiplier_limit operation
+#ifdef AUTOREG
+            out_pack.data[j] = exp_res[j] * inv_exp_sum;
+#else
             out_pack[j] = exp_res[j] * inv_exp_sum;
+#endif
         }
-
+#ifdef AUTOREG
+        out_pack.exit_task = false;
+#endif
         res_pipe::write(out_pack);
     }
 }

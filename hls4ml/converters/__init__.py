@@ -252,7 +252,7 @@ def convert_from_keras_model(
     config['HLSConfig']['ContextLength'] = context_len
     hostrw = hls_config.get('HostRW', 0)
     config['HLSConfig']['HostRW'] = hostrw
-    autoregressive = hls_config.get('Autoregressive', 0)
+    autoregressive = hls_config.get('Autoregressive', None)
     config['HLSConfig']['Autoregressive'] = autoregressive
     max_invoc = hls_config.get('MaxInvoc', None)
     config['HLSConfig']['MaxInvoc'] = max_invoc
@@ -339,7 +339,7 @@ def convert_from_pytorch_model(
     config['HLSConfig']['ContextLength'] = context_len
     hostrw = hls_config.get('HostRW', 0)
     config['HLSConfig']['HostRW'] = hostrw
-    autoregressive = hls_config.get('Autoregressive', 0)
+    autoregressive = hls_config.get('Autoregressive', None)
     config['HLSConfig']['Autoregressive'] = autoregressive
     max_invoc = hls_config.get('MaxInvoc', None)
     config['HLSConfig']['MaxInvoc'] = max_invoc
@@ -416,7 +416,7 @@ def convert_from_onnx_model(
     config['HLSConfig']['ContextLength'] = context_len
     hostrw = hls_config.get('HostRW', 0)
     config['HLSConfig']['HostRW'] = hostrw
-    autoregressive = hls_config.get('Autoregressive', 0)
+    autoregressive = hls_config.get('Autoregressive', None)
     config['HLSConfig']['Autoregressive'] = autoregressive
     max_invoc = hls_config.get('MaxInvoc', None)
     config['HLSConfig']['MaxInvoc'] = max_invoc

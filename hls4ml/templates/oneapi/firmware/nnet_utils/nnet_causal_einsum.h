@@ -32,17 +32,8 @@ struct config_causal_einsum {
 
 #define PADDING_TYPES 1
 #if PADDING_TYPES
-// Padding Helper - Not used anymore since attention layer does not need it
-template <typename data_T> constexpr data_T minval() {
-    if constexpr (std::numeric_limits<data_T>::is_specialized) {
-        return std::numeric_limits<data_T>::lowest();
-    } else {
-        if (!data_T::sign)
-            return data_T(0);
-        else
-            return data_T(-(1LL << (data_T::i_width - 1)));
-    }
-}
+// Padding Helper
+
 
 // ac_fixed<res_T::width, res_T::i_width, res_T::sign, res_T::q_mode, AC_SAT> min_fx =
 //  value<AC_VAL_MIN>(ac_fixed<res_T::width, res_T::i_width, res_T::sign, res_T::q_mode, AC_SAT>());
@@ -69,12 +60,15 @@ device_global<typename CausalState<data_T, CONFIG_T>::State, decltype(properties
 
 // reads a contraction length unit from stream used for datas of dimension > 2
 // only works with per-I streamed data though, careful about what you stream
-template <class data_T, class data_pipe, typename CONFIG_T>
-void read_causal_pipe(unsigned i, unsigned *write_ptrs, unsigned *ctx_cts, data_T *causal_buffer) {
+template <class data_T, class data_arr_T, typename CONFIG_T>
+#ifdef AUTOREG
+bool
+#else
+void 
+#endif
+read_causal_pipe(data_buf_T buff, unsigned i, unsigned *write_ptrs, unsigned *ctx_cts, data_T *causal_buffer) {
 
-    using data_buf_T = typename ExtractPipeType<data_pipe>::value_type;
     constexpr std::size_t CAUSAL_PIPE_SIZE = std::tuple_size<data_buf_T>::value;
-
     constexpr unsigned C = CONFIG_T::n_contract;
     constexpr unsigned I = CONFIG_T::n_inplace;
     constexpr unsigned L1 = CONFIG_T::n_free1;
@@ -85,37 +79,47 @@ void read_causal_pipe(unsigned i, unsigned *write_ptrs, unsigned *ctx_cts, data_
             //#pragma unroll
             for (unsigned l1 = 0; l1 < L1; l1++) {
                 // assumes stream is vector by vector (1xC each time)
-                data_buf_T buff = data_pipe::read();
-
                 for (unsigned c = 0; c < C; c++) {
+                    #ifdef AUTOREG
+                    causal_buffer[L1 * C * I * write_ptrs[i] + C * L1 * i + C * l1 + c] = buff.data[c];
+                    #else
                     causal_buffer[L1 * C * I * write_ptrs[i] + C * L1 * i + C * l1 + c] = buff[c];
+                    #endif
                 }
             }
         } else {
             for (unsigned c = 0; c < C; c++) {
                 // assumes stream is vector by vector (1xL1 each time)
-                data_buf_T buff = data_pipe::read();
-
                 //#pragma unroll
                 for (unsigned l1 = 0; l1 < L1; l1++) {
+                    #ifdef AUTOREG
+                    causal_buffer[L1 * C * I * write_ptrs[i] + C * L1 * i + C * l1 + c] = buff.data[l1];
+                    #else
                     causal_buffer[L1 * C * I * write_ptrs[i] + C * L1 * i + C * l1 + c] = buff[l1];
+                    #endif
                 }
             }
         }
     } else {
-        data_buf_T buff = data_pipe::read();
         //#pragma unroll
         for (unsigned l1 = 0; l1 < L1; l1++) {
+            #ifdef AUTOREG
+            causal_buffer[L1 * I * write_ptrs[i] + L1 * i + l1] = buff.data[l1];
+            #else
             causal_buffer[L1 * I * write_ptrs[i] + L1 * i + l1] = buff[l1];
+            #endif
         }
     }
     ctx_cts[i] = (ctx_cts[i] + 1 < CTX) ? (ctx_cts[i] + 1) : CTX;
     write_ptrs[i] = (write_ptrs[i] + 1 >= CTX) ? (write_ptrs[i] + 1 - CTX) : (write_ptrs[i] + 1);
-    // write_ptrs[i] = (write_ptrs[i] + 1) % CTX;
+    
+    #ifdef AUTOREG
+    return buff.exit_task;
+    #endif
 }
 
 // read specific to contraction along the context
-template <class data_T, class data_buf_T, class data_pipe, typename CONFIG_T>
+template <class data_T, class data_buf_T, typename CONFIG_T>
 void read_causal_pipe_ctx(data_buf_T &data_buff, unsigned i, unsigned *write_ptrs, unsigned *ctx_cts,
                           data_T *causal_buffer) {
 
@@ -139,53 +143,61 @@ void read_causal_pipe_ctx(data_buf_T &data_buff, unsigned i, unsigned *write_ptr
 
 // reads a contraction length unit from stream used for datas of dimension > 2
 // only works with per-I streamed data though, careful about what you stream
-template <class data_T, class data_pipe, typename CONFIG_T>
-void read_stateless_pipe(data_T data_vect_buffer[(CONFIG_T::contract_dim ? CONFIG_T::n_free0 : CONFIG_T::n_contract)]) {
-
-    using data_buf_T = typename ExtractPipeType<data_pipe>::value_type;
+template <class data_T, class data_arr_T, typename CONFIG_T>
+#ifdef AUTOREG
+bool
+#else
+void 
+#endif
+read_stateless_pipe(data_arr_T buff, data_T data_vect_buffer[(CONFIG_T::contract_dim ? CONFIG_T::n_free0 : CONFIG_T::n_contract)]) {
 
     constexpr unsigned C = CONFIG_T::n_contract;
     constexpr unsigned L0 = CONFIG_T::n_free0;
-    // constexpr unsigned I = CONFIG_T::n_inplace;
 
     // assumes stream is vector by vector (1xC each time)
-    data_buf_T buff = data_pipe::read();
 
     if (!CONFIG_T::contract_dim) {
         #pragma unroll
         for (unsigned c = 0; c < C; c++) {
+#ifdef AUTOREG
+            data_vect_buffer[c] = buff.data[c];
+#else
             data_vect_buffer[c] = buff[c];
+#endif
         }
     } else {
         #pragma unroll
         for (unsigned l0 = 0; l0 < L0; l0++) {
+#ifdef AUTOREG
+            data_vect_buffer[l0] = buff.data[l0];
+#else
             data_vect_buffer[l0] = buff[l0];
+#endif
         }
     }
+#ifdef AUTOREG
+    return buff.exit_task;
+#endif
 }
 
-constexpr unsigned ceil_log2(unsigned x) {
-    if (x == 0)
-        return 0;
-    unsigned res = 0;
-    x -= 1;
-    while (x > 0) {
-        x >>= 1;
-        res++;
-    }
-    return res;
-}
 
 // THIS ASSUMES DATA ARRIVES IN {STATELESS,CAUSAL} FASHION
 template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T> void causal_einsum() {
 
+#ifdef AUTOREG
+    using data0_pipe_T = typename ExtractPipeType<data0_pipe>::value_type;
+    using data1_pipe_T = typename ExtractPipeType<data1_pipe>::value_type;
+    using res_pipe_T = typename ExtractPipeType<res_pipe>::value_type;
+    using data0_buf_T = typename data0_pipe_T::data_type;
+    using data1_buf_T = typename data1_pipe_T::data_type;
+    using res_buf_T = typename res_pipe_T::data_type;
+#else
     using data0_buf_T = typename ExtractPipeType<data0_pipe>::value_type;
-    using data0_T = typename data0_buf_T::value_type;
-
     using data1_buf_T = typename ExtractPipeType<data1_pipe>::value_type;
-    using data1_T = typename data1_buf_T::value_type;
-
     using res_buf_T = typename ExtractPipeType<res_pipe>::value_type;
+#endif    
+    using data0_T = typename data0_buf_T::value_type;
+    using data1_T = typename data1_buf_T::value_type;
     using res_T = typename res_buf_T::value_type;
 
     // using accum_T = ac_fixed<2*res_T::width, 2*res_T::i_width, res_T::sign>;
@@ -213,7 +225,22 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
     auto &ctx_cts = state.ctx_cts;
     //################################################################
 
+
+#ifdef AUTOREG
+    while (true) {
+
+        auto in_data_pack = data_pipe::read();
+        auto in_pack = in_data_pack.data;
+
+        if (in_data_pack.exit_task) {
+            out_pack.exit_task = true;
+            res_pipe::write(out_pack);
+            break;
+        }
+#else
     for (unsigned loop = 0; loop < CTX; loop++) {
+#endif
+
         // COMBINE THIS WITH TILED APPROACH FOR A SPEEDUP
         #pragma unroll 4
         for (unsigned i = 0; i < I; i++) {
@@ -222,10 +249,29 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
 
                 for (unsigned l0 = 0; l0 < L0; l0++) {
 
-                    read_stateless_pipe<data0_T, data0_pipe, CONFIG_T>(data_vect_buffer);
+                #ifdef AUTOREG
+                    if (read_stateless_pipe<data0_T, data0_buf_T, CONFIG_T>(data0_pipe::read(),data_vect_buffer)){
+                        res_buffer.exit_task = true;
+                        res_pipe::write(res_buffer);
+                        break;
+                    }
+                #else
+                    read_stateless_pipe<data0_T, data0_buf_T, CONFIG_T>(data0_pipe::read(),data_vect_buffer);
+                #endif
 
-                    if (l0 == 0)
+                    if (l0 == 0){
+                    #ifdef AUTOREG
+                        if (read_causal_pipe<data1_T, data1_buf_T, CONFIG_T>(data1_pipe::read(), i, write_ptrs, ctx_cts, causal_buff)){
+                            res_buffer.exit_task = true;
+                            res_pipe::write(res_buffer);
+                            break;
+                        }
+                    #else
                         read_causal_pipe<data1_T, data1_pipe, CONFIG_T>(i, write_ptrs, ctx_cts, causal_buff);
+                    #endif
+                        
+                    }
+                      
 
                     unsigned offset_ctx = (ctx_cts[i] == CTX) ? write_ptrs[i] : 0;
 
@@ -245,33 +291,60 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
                                 }
 
                                 tmp /= CONFIG_T::sqrt_dk;
+                            #ifdef AUTOREG
+                                res_buffer.data[ctx_buff_offset + l1] = static_cast<res_T>(tmp);
+                            #else
                                 res_buffer[ctx_buff_offset + l1] = static_cast<res_T>(tmp);
+                            #endif
                             }
                         } else {
                             #pragma unroll
                             for (unsigned l1 = 0; l1 < L1; l1++) {
-                                res_buffer[ctx_buff_offset + l1] =
-                                    minval<res_T>(); // res_T(0);//no need to pad with -INF since V mult has 0's in place
+                            #ifdef AUTOREG
+                                res_buffer.data[ctx_buff_offset + l1] = minval<res_T>();
+                            #else
+                                res_buffer[ctx_buff_offset + l1] = minval<res_T>();
+                            #endif  
                             }
                         }
                     }
+                #ifdef AUTOREG
+                    res_buffer.exit_task = false;
+                #endif
                     res_pipe::write(res_buffer);
                 }
 
             } else { // CONTRACT ALONG THE CONTEXT - In this mode L0 == CTX and C is irrelevant
 
-                read_stateless_pipe<data0_T, data0_pipe, CONFIG_T>(data_vect_buffer);
-
+            #ifdef AUTOREG
+                if (read_stateless_pipe<data0_T, data0_buf_T, CONFIG_T>(data0_pipe::read(), data_vect_buffer)){
+                    res_buffer.exit_task = true;
+                    res_pipe::write(res_buffer);
+                    break;
+                }
+            #else
+                read_stateless_pipe<data0_T, data0_buf_T, CONFIG_T>(data0_pipe::read(), data_vect_buffer);
+            #endif
+                
+            #ifdef AUTOREG
+                data1_pipe_T causal_pipe = data1_pipe::read();
+                if (causal_pipe.exit_task){
+                    res_buffer.exit_task = true;
+                    res_pipe::write(res_buffer);
+                    break;
+                }
+                [[intel::fpga_register]] data1_buf_T causal_data = causal_pipe.data;
+            #else
                 [[intel::fpga_register]] data1_buf_T causal_data = data1_pipe::read();
+            #endif
                 [[intel::fpga_register]] data1_buf_T causal_data_operate = causal_data;
-
+                
+                // Pre-calculate pointers to prevent r/w memory dependency
                 ctx_cts[i] = (ctx_cts[i] + 1 < CTX) ? (ctx_cts[i] + 1) : CTX;
-                // write_ptrs[i] = (write_ptrs[i] + 1) % CTX;
                 write_ptrs[i] = (write_ptrs[i] + 1 >= CTX) ? (write_ptrs[i] + 1 - CTX) : (write_ptrs[i] + 1);
-
                 unsigned offset_ctx = (ctx_cts[i] == CTX) ? write_ptrs[i] : 0;
 
-                #pragma unroll 4
+                #pragma unroll 4 //TODO - Tune unrolls 
                 for (unsigned l1 = 0; l1 < L1; l1++) {
                     accum_T tmp = 0;
                     tmp = (CTX - 1 < ctx_cts[i]) ? (data_vect_buffer[CTX - 1] * causal_data_operate[l1])
@@ -280,16 +353,22 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
                         if (ctx < ctx_cts[i] - 1) {
 
                             unsigned idx = offset_ctx + ctx;
-                            // unsigned offset_to_buffer = (offset_ctx + ctx) % CTX;
                             unsigned offset_to_buffer = (idx >= CTX) ? idx - CTX : idx;
                             tmp += data_vect_buffer[ctx] * causal_buff[L1 * I * offset_to_buffer + L1 * i + l1];
                         }
                     }
-                    res_buffer[l1] = static_cast<res_T>(tmp);
+                    #ifdef AUTOREG
+                        res_buffer.data[l1] = static_cast<res_T>(tmp);
+                    #else
+                        res_buffer[l1] = static_cast<res_T>(tmp);
+                    #endif
                 }
-
+                #ifdef AUTOREG
+                    res_buffer.exit_task = false;
+                #endif
                 res_pipe::write(res_buffer);
-                read_causal_pipe_ctx<data1_T, data1_buf_T, data1_pipe, CONFIG_T>(causal_data, i, write_ptrs, ctx_cts,
+                // Pointers are updated externally so this func does not touch ctx_cts or write_ptrs
+                read_causal_pipe_ctx<data1_T, data1_buf_T, CONFIG_T>(causal_data, i, write_ptrs, ctx_cts,
                                                                                  causal_buff);
             }
         }

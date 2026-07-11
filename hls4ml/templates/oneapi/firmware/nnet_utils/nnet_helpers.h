@@ -12,6 +12,35 @@
 
 namespace nnet {
 
+template<class data_T> struct DataPacket {
+    using data_type = data_T;
+    data_T data = {}; 
+    bool exit_task = false;
+};
+
+template <typename data_T> constexpr data_T minval() {
+    if constexpr (std::numeric_limits<data_T>::is_specialized) {
+        return std::numeric_limits<data_T>::lowest();
+    } else {
+        if (!data_T::sign)
+            return data_T(0);
+        else
+            return data_T(-(1LL << (data_T::i_width - 1)));
+    }
+}
+
+constexpr unsigned ceil_log2(unsigned x) {
+    if (x == 0)
+        return 0;
+    unsigned res = 0;
+    x -= 1;
+    while (x > 0) {
+        x >>= 1;
+        res++;
+    }
+    return res;
+}
+
 template <class srcType, class dest_pipe, size_t SIZE> void convert_data(sycl::queue &q, srcType *src) {
     constexpr auto dstTypeSize = std::tuple_size<typename ExtractPipeType<dest_pipe>::value_type>{};
     for (size_t i = 0; i < SIZE / dstTypeSize; i++) {

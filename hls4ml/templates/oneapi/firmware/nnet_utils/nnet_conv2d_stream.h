@@ -109,23 +109,53 @@ LineBufferDataIn:
  * the line buffer (3) Matrix mulitplication - performs dense matrix multiplication between the current input window and
  * kernel weights (4) Counter housekeeping - keeps track of current pixel and stride
  */
-template <class data_T, class data_window_T, class res_pipe, typename CONFIG_T>
+template <class data_in_T, class data_window_T, class res_pipe, typename CONFIG_T>
 void compute_output_buffer_2d(
-    const data_T &in_elem,
-    nnet::shift_reg<typename data_T::value_type, CONFIG_T::pad_left + CONFIG_T::in_width + CONFIG_T::pad_right>
+    const data_in_T &in_elem,
+    #ifdef AUTOREG
+    nnet::shift_reg<typename data_in_T::data_type::value_type,
+    #else
+    nnet::shift_reg<typename data_in_T::value_type,
+    #endif
+    CONFIG_T::pad_left + CONFIG_T::in_width + CONFIG_T::pad_right>
         line_buffer[MAX(CONFIG_T::filt_height - 1, 1)][CONFIG_T::n_chan],
     data_window_T &kernel_window, const typename CONFIG_T::weight_t &weights, const typename CONFIG_T::bias_t &biases,
-    int &pX, int &pY, int &sX, int &sY) {
+    int &pX, int &pY, int &sX, int &sY    
+    #ifdef AUTOREG
+    , bool &exit_task
+    #endif
+    ) {
 
+#ifdef AUTOREG
+    using data_T = typename data_in_T::data_type;
+    using out_pipe_T = typename ExtractPipeType<res_pipe>::value_type;
+    using res_T = typename out_pipe_T::value_type;
+
+    [[intel::fpga_register]] out_pipe_T out_pipe;
+
+    if(in_elem.exit_task){
+        out_pipe.exit_task = true;
+        exit_task = true;
+        res_pipe::write(out_pipe);
+        return;
+    }
+#else
+    using data_T = typename data_in_T;
     using res_T = typename ExtractPipeType<res_pipe>::value_type;
+#endif
 
     // Thresholds
     constexpr int lShiftX = CONFIG_T::filt_width - 1;
     constexpr int lShiftY = CONFIG_T::filt_height - 1;
 
     // Step 1 - Shift line buffer
+#ifdef AUTOREG
+    [[intel::fpga_register]] typename data_T::value_type shift_buffer[CONFIG_T::filt_height][CONFIG_T::n_chan];
+    nnet::shift_line_buffer_2d<data_T, CONFIG_T>(in_elem.data, line_buffer, shift_buffer);
+#else
     [[intel::fpga_register]] typename data_T::value_type shift_buffer[CONFIG_T::filt_height][CONFIG_T::n_chan];
     nnet::shift_line_buffer_2d<data_T, CONFIG_T>(in_elem, line_buffer, shift_buffer);
+#endif
 
     // Step 2 - Kernel shift
     nnet::kernel_shift_2d<data_T, data_window_T, CONFIG_T>(shift_buffer, kernel_window);
@@ -143,7 +173,14 @@ void compute_output_buffer_2d(
         for (int channel = 0; channel < CONFIG_T::n_filt; channel++) {
             res_pack[channel] = res_out[channel];
         }
+    #ifdef AUTOREG
+        out_pipe.data = res_pack;
+        out_pipe.exit_task = false;
+        exit_task = false;
+        res_pipe::write(out_pipe);
+    #else 
         res_pipe::write(res_pack);
+    #endif
     }
 
     // Reached end of image
@@ -168,7 +205,13 @@ void compute_output_buffer_2d(
 
 template <class data_pipe, class res_pipe, typename CONFIG_T> void conv_2d_cl_stream() {
 
+#ifdef AUTOREG
+    using data_pipe_T = typename ExtractPipeType<data_pipe>::value_type;
+    using data_arr_T = typename data_pipe_T::data_type;
+    bool exit_task = 0;
+#else
     using data_arr_T = typename ExtractPipeType<data_pipe>::value_type;
+#endif
     using data_element_T = typename data_arr_T::value_type;
     using data_window_T = array<data_element_T, CONFIG_T::filt_height * CONFIG_T::filt_width * CONFIG_T::n_chan>;
 
@@ -179,6 +222,9 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void conv_2d_cl_st
 
     // An array of length CONFIG_T::n_chan, with elements set to zero (padding for each channel)
     constexpr auto padds = zero_array<data_arr_T>();
+#ifdef AUTOREG
+    constexpr DataPacket<data_arr_T> padds_packet{padds};
+#endif
 
     // move former static variables outside the function calls
     // X position pixel
@@ -190,6 +236,65 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void conv_2d_cl_st
     // Y strides
     int sY = 0;
 
+#ifdef AUTOREG
+while (!exit_task){
+
+    // Reset strides for each image
+    int pX = 0;
+    int pY = 0;
+    int sX = 0;
+    int sY = 0;
+
+    // Padding above input image
+    PaddingTopHeight:
+        [[intel::loop_coalesce(2)]] for (int row = 0; row < CONFIG_T::pad_top; row++) {
+        PaddingTopWidth:
+            for (int col = 0; col < CONFIG_T::pad_left + CONFIG_T::in_width + CONFIG_T::pad_right; col++) {
+                compute_output_buffer_2d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
+                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY, exit_task);
+            }
+        }
+
+    ReadInputHeight:
+        [[intel::loop_coalesce(2)]] for (int row = 0; row < CONFIG_T::in_height; row++) {
+        // Input image left-side padding
+        PaddingLeftWidth:
+            for (int col = 0; col < CONFIG_T::pad_left; col++) {
+                compute_output_buffer_2d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
+                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY, exit_task);
+            }
+
+        // Read input image
+        ReadInputWidth:
+            for (int col = 0; col < CONFIG_T::in_width; col++) {
+                compute_output_buffer_2d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
+                    data_pipe::read(), line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY, exit_task);
+
+                if (exit_task) break;
+            }
+            if (exit_task) break;
+
+        // Input image right-side padding
+        PaddingRightWidth:
+            for (int col = 0; col < CONFIG_T::pad_right; col++) {
+                compute_output_buffer_2d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
+                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY, exit_task);
+            }
+        }
+
+    // Padding below input image
+    PaddingBottomHeight:
+        [[intel::loop_coalesce(2)]] for (int row = 0; row < CONFIG_T::pad_bottom; row++) {
+        PaddingBottomWidth:
+            for (int col = 0; col < CONFIG_T::pad_left + CONFIG_T::in_width + CONFIG_T::pad_right; col++) {
+                compute_output_buffer_2d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
+                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY, exit_task);
+            }
+        }
+    }
+}
+
+#else
 // Padding above input image
 PaddingTopHeight:
     [[intel::loop_coalesce(2)]] for (int row = 0; row < CONFIG_T::pad_top; row++) {
@@ -234,6 +339,7 @@ PaddingBottomHeight:
         }
     }
 }
+#endif
 
 } // namespace nnet
 

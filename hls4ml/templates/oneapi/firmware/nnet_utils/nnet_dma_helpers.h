@@ -19,19 +19,11 @@ enum class PipeSignal {
     no_feedback, feedback, stop
 };
 
-struct SwitchCounters {
-    unsigned write;
-    unsigned read;
-};
-
-struct StopSignal {
-    static constexpr unsigned stop = PipeSignal::stop;
+struct SignalPack {
+    PipeSignal signal;
     unsigned writect;
 };
 
-template<class switch_pair>
-device_global<SwitchCounters, decltype(properties(device_image_scope, host_access_none))>
-    switch_counters;
 
 /*
 //TODO: Check if HLS parallelises each switch_single_pipe instance on its own else look for compiler command
@@ -59,76 +51,221 @@ template <class host_pipe, class feedback_pipe, class switch_pipe, class control
 
     [[intel::fpga_register]] data_T in_data;
     [[intel::fpga_register]] bool switch_to_fb = false;
-
-    // Device global to share counters between switches
-    auto &counters = switch_counters<switch_pipe>.get();
-    auto &writect = counters.write;
+    [[intel::fpga_memory]] SignalPack signal_pack; // TODO - Check attribute
 
     while(true){
 
         if(switch_to_fb){
             in_data = feedback_pipe::read();
             if (in_data == STOP_ID){
-                control_pipe::write(PipeSignal::stop);
+                signal_pack.signal = PipeSignal::stop;
+                control_pipe::write(signal_pack);
                 break;
             } 
             else if (in_data == SWITCH_ID){
                 switch_to_fb = false;
-                control_pipe::write(PipeSignal::no_feedback);
+                signal_pack.signal = PipeSignal::no_feedback;
+                control_pipe::write(signal_pack);
             } 
-            else control_pipe::write(PipeSignal::feedback);
+            else {
+                signal_pack.signal = PipeSignal::feedback;
+                control_pipe::write(signal_pack);
+            }
         }
         else{   
             in_data = host_pipe::read();
             if (in_data == STOP_ID){
-                control_pipe::write(PipeSignal::stop);
+                signal_pack.signal = PipeSignal::stop;
+                control_pipe::write(signal_pack);
                 break;
             } 
             else if (in_data == SWITCH_ID){
                 switch_to_fb = true;
-                control_pipe::write(PipeSignal::feedback);
+                signal_pack.signal = PipeSignal::feedback;
+                control_pipe::write(signal_pack);
             } 
-            else control_pipe::write(PipeSignal::no_feedback);
+            else {
+                signal_pack.signal = PipeSignal::no_feedback;
+                control_pipe::write(signal_pack);
+            }
         }
         switch_pipe::write(in_data);
-        writect++;
+        signal_pack.writect++;
     }
 }
 
-template <class host_pipe, class feedback_pipe, class switch_pipe, class control_pipe> void out_switch() {
+template <class host_pipe, class feedback_pipe, class switch_pipe, class switch_pos_pipe, class control_pipe, typename CONFIG_T> void inp_switch() {
+
+    using pipe_T = typename ExtractPipeType<host_pipe>::value_type;
+    using data_T = typename pipe_T::value_type;
+    static constexpr data_T SWITCH_ID = CONFIG_T::switch_signal;
+    static constexpr data_T STOP_ID = CONFIG_T::stop_signal;
+
+    [[intel::fpga_register]] data_T in_data;
+    [[intel::fpga_register]] bool switch_to_fb = false;
+    [[intel::fpga_memory]] SignalPack signal_pack; // TODO - Check attribute
+
+    while(true){
+        if(switch_to_fb){
+            in_data = feedback_pipe::read();
+            signal_pack.writect++;
+            
+            if (in_data == STOP_ID){
+                signal_pack.signal = PipeSignal::stop;
+                control_pipe::write(signal_pack);
+                break;
+            } 
+            else if (in_data == SWITCH_ID){
+                switch_to_fb = false;
+                signal_pack.signal = PipeSignal::no_feedback;
+                control_pipe::write(signal_pack);
+            } 
+            else {
+                signal_pack.signal = PipeSignal::feedback;
+                control_pipe::write(signal_pack);
+            }
+        }
+        else{   
+            in_data = host_pipe::read();
+            signal_pack.writect++;
+
+            if (in_data == STOP_ID){
+                signal_pack.signal = PipeSignal::stop;
+                control_pipe::write(signal_pack);
+                break;
+            } 
+            else if (in_data == SWITCH_ID){
+                switch_to_fb = true;
+                signal_pack.signal = PipeSignal::feedback;
+                control_pipe::write(signal_pack);
+            } 
+            else {
+                signal_pack.signal = PipeSignal::no_feedback;
+                control_pipe::write(signal_pack);
+            }
+        }
+        switch_pipe::write(in_data);
+        switch_pos_pipe::write(signal_pack.writect);
+    }
+}
+
+template <class host_pipe, class feedback_pipe, class switch_pipe, class control_pipe, typename CONFIG_T> void out_switch() {
 
     using control_T = typename ExtractPipeType<control_pipe>::value_type;
-    using data_in_arr_T = typename ExtractPipeType<typename switch_pipe>::value_type;
+    using data_in_arr_T = typename ExtractPipeType<switch_pipe>::value_type;
     using data_in_T = typename data_in_arr_T::value_type;
-
-    // Device global to share counters between switches
-    auto &counters = switch_counters<switch_pipe>.get();
-    auto &writect = counters.write;
-    auto &readct = counters.read;
+    static constexpr data_in_arr_size = std::tuple_size<data_in_arr_T>{};
+    using res_arr_T = typename ExtractPipeType<host_pipe>::value_type;
+    static constexpr bool ARGMAX = CONFIG_T::argmax;
+    
+    PipeSignal prev_signal;
+    unsigned readct = 0;
+    res_arr_T maxval_idx;
+    
     
     while (true) {
 
         // Read the control signal first
-        control_T control_signal = control_pipe::read();
+        control_T control_pack = control_pipe::read();
+        PipeSignal control_signal = control_pack.signal;
 
         // Empty pipeline and exit 
         if (control_signal == PipeSignal::stop){
-            for(unsigned i = 0; i < (writect - readct); i++){
+            for(unsigned i = 0; i < (control_pack.writect - readct); i++){
                 data_in_arr_T data = switch_pipe::read();
-                host_pipe::write(data);
+                if constexpr (ARGMAX){
+                    maxval_idx[0] = argmax_stream<data_in_arr_T, data_in_arr_size, res_arr_T>(data);
+                    host_pipe::write(maxval_idx);
+                }
+                else{
+                    host_pipe::write(data);
+                } 
             }
             break;
         }
         else {
-            data_in_arr_T data = switch_pipe::read();
-            readct++;
-            host_pipe::write(data);
+            if (prev_signal != control_signal){
+                for(; readct < control_pack.writect; readct++){
 
-            if (control_signal == PipeSignal::feedback){
-                feedback_pipe::write(data);
+                    data_in_arr_T data = switch_pipe::read();
+
+                    if constexpr (ARGMAX) {
+                        maxval_idx[0] = argmax_stream<data_in_arr_T, data_in_arr_size, res_arr_T>(data);
+                        host_pipe::write(maxval_idx);
+                        if (prev_signal == PipeSignal::feedback){
+                            feedback_pipe::write(maxval_idx);
+                        }      
+                    }
+                    else{
+                        host_pipe::write(data);
+                        if (prev_signal == PipeSignal::feedback){
+                            feedback_pipe::write(data);
+                        }                       
+                    }  
+                                   
+                }
             }
+
+            // TODO - Check readct and writect logic dont make off by one mistake ensure we empty the pipe first and read the last one
+            // so you might need for(; readct < control_pack.writect - 1; readct++) loop instead DOUBLE CHECK THIS
+            data_in_arr_T data = switch_pipe::read();
+            
+            if constexpr (ARGMAX) {
+                maxval_idx[0] = argmax_stream<data_in_arr_T, data_in_arr_size, res_arr_T>(data);
+                host_pipe::write(maxval_idx);
+                if (control_signal == PipeSignal::feedback){
+                    feedback_pipe::write(maxval_idx);
+                }
+            }
+            else{
+                host_pipe::write(data);
+
+                if (control_signal == PipeSignal::feedback){
+                    feedback_pipe::write(data);
+                }
+            }
+            readct++;
+        }
+
+        prev_signal = control_signal;
+    }
+}
+
+// Returns the maximum value from an array of size N - assumes data is array and output size is always 1 (not an array)
+template <typename data_arr_T, int N, typename res_arr_T> res_arr_T argmax_stream(data_arr_T data) {
+
+    constexpr unsigned loops = ceil_log2(N);
+    constexpr unsigned padded_len = 1 << loops;
+
+    // Single element requires no pooling so return straight away
+    if constexpr (loops == 0) return static_cast<res_T>(data[0]);
+
+    using data_in_T = typename data_arr_T::value_type;
+    using idx_arr_T = typename nnet::array<ac_fixed<loops, loops, false>, padded_len>;
+    using res_T = typename res_arr_T::value_type;
+
+    idx_arr_T maxval_idxs;
+    res_T maxval_idx = 0;
+
+    #pragma unroll
+    for (unsigned it = 0; it < padded_len; it++) {
+        maxval_idxs[it] = it;
+    }
+
+    #pragma unroll
+    for (unsigned arr_len = padded_len; arr_len > 1; arr_len /= 2) {
+        unsigned curr_len = arr_len / 2;
+        #pragma unroll
+        for (unsigned l = 0; l < curr_len; l++) {
+            data_in_T data_first = ((2 * l) < N) ?  data[2 * l] : minval<data_in_T>();
+            data_in_T data_second = ((2 * l + 1) < N) ? data[2 * l + 1] : minval<data_in_T>();
+            data[l] = (data_first > data_second) ? data_first : data_second;
+            maxval_idxs[l] = (data_first > data_second) ? maxval_idxs[2 * l] : maxval_idxs[2 * l + 1];
         }
     }
+
+    maxval_idx = maxval_idxs[0];
+    return maxval_idx;
 }
 
 /*

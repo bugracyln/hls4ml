@@ -10,8 +10,18 @@ template <class data_pipe, class res_pipe, typename CONFIG_T>
 void gru_stream(typename CONFIG_T::weight_t weights, typename CONFIG_T::recurrent_weight_t recurrent_weights,
                 typename CONFIG_T::bias_t bias, typename CONFIG_T::recurrent_bias_t recurrent_bias) {
 
+#ifdef AUTOREG
+    using data_pipe_T = ExtractPipeType<data_pipe>::value_type;
+    using res_pipe_T = ExtractPipeType<res_pipe>::value_type;
+    using data_T = typename data_pipe_T::data_type;
+    using res_T = typename res_pipe_T::data_type;
+
+    [[intel::fpga_register]] res_pipe_T res_pack_pipe;
+#else
     using data_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_T = typename ExtractPipeType<res_pipe>::value_type;
+#endif 
+
     using h_T = array<typename res_T::value_type, CONFIG_T::n_units>;
 
     constexpr auto datasize = std::tuple_size<data_T>{};
@@ -26,8 +36,19 @@ void gru_stream(typename CONFIG_T::weight_t weights, typename CONFIG_T::recurren
     [[intel::fpga_register]] data_T x;
 
 DataPropagation:
+#ifdef AUTOREG
+    while (true){
+        auto data_pack_pipe = data_pipe::read();
+        if (data_pack_pipe.exit_task){
+            res_pack_pipe.exit_task = true;
+            res_pipe::write(res_pack_pipe);
+            return;
+        }
+        auto data_pack = data_pack_pipe.data;
+#else
     for (int i_in = 0; i_in < CONFIG_T::n_timesteps * CONFIG_T::n_in / datasize; i_in++) {
         auto data_pack = data_pipe::read();
+#endif
 
     DataPack:
         #pragma unroll
@@ -45,8 +66,13 @@ DataPropagation:
             for (int i_pack = 0; i_pack < ressize; i_pack++) {
                 res_pack[i_pack] = h[i_pack];
             }
-
+        #ifdef AUTOREG
+            res_pack_pipe.data = res_pack;
+            res_pack_pipe.exit_task = false;
+            res_pipe::write(res_pack_pipe);
+        #else
             res_pipe::write(res_pack);
+        #endif
         }
     }
 
@@ -58,8 +84,13 @@ DataPropagation:
         for (int i_pack = 0; i_pack < ressize; i_pack++) {
             res_pack[i_pack] = h[i_pack];
         }
-
+    #ifdef AUTOREG
+        res_pack_pipe.data = res_pack;
+        res_pack_pipe.exit_task = false;
+        res_pipe::write(res_pack_pipe);
+    #else
         res_pipe::write(res_pack);
+    #endif
     }
 }
 

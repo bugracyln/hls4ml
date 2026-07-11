@@ -31,7 +31,12 @@ struct einsum_dense_config {
 };
 
 // Read tokens from input stream into a buffer
-template <class Dense_in_T, class data_pipe, typename CONFIG_T> void read_token(Dense_in_T &token_buffer) {
+template <class Dense_in_T, class data_pipe, typename CONFIG_T> 
+void read_token(Dense_in_T &token_buffer
+    #ifdef AUTOREG
+    , bool &exit_task
+    #endif
+    ) {
 
     using data_buff_T = typename ExtractPipeType<data_pipe>::value_type;
 
@@ -40,10 +45,19 @@ template <class Dense_in_T, class data_pipe, typename CONFIG_T> void read_token(
     // constexpr unsigned I = CONFIG_T::n_inplace;
 
     data_buff_T buff = data_pipe::read();
+    
     #pragma unroll 4
     for (unsigned c = 0; c < C; c++) {
+    #ifdef AUTOREG
+        token_buffer[c] = buff.data[c];
+    #else
         token_buffer[c] = buff[c];
+    #endif
     }
+
+#ifdef AUTOREG
+    exit_task = buff.exit_task;
+#endif
 }
 
 // weights are already transposed during compile-time in the config
@@ -56,63 +70,115 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
     constexpr unsigned HEAD_DIM_IN = static_cast<unsigned>(CONFIG_T::n_contract / CONFIG_T::n_head);
     constexpr unsigned HEAD_DIM_OUT = static_cast<unsigned>(CONFIG_T::n_free_kernel / CONFIG_T::n_head);
 
+#ifdef AUTOREG
+    using Dense_in_pipe_T = typename ExtractPipeType<data_pipe>::value_type;
+    using Dense_in_T = typename Dense_in_pipe_T::data_type;
+    using Dense_out_pipe_T = typename ExtractPipeType<res_pipe>::value_type;
+    using Dense_out_T = typename Dense_out_pipe_T::data_type;
+    bool exit_task = 0;
+#else
     using Dense_in_T = typename ExtractPipeType<data_pipe>::value_type;
+    using Dense_out_T = typename ExtractPipeType<res_pipe>::value_type;
+#endif
+
     using Dense_in_data_T = typename Dense_in_T::value_type;
     using Dense_concat_T = nnet::array<Dense_in_data_T, C>;
-    using Dense_out_T = typename ExtractPipeType<res_pipe>::value_type;
     using Dense_weights_T = nnet::array<typename CONFIG_T::weight_t::value_type, L1 * C>;
     using Dense_biases_T = nnet::array<typename CONFIG_T::bias_t::value_type, L1>;
     using Dense_heads_T = nnet::array<Dense_in_data_T, L1>;
 
     [[intel::fpga_register]] Dense_in_T dense_in;
     [[intel::fpga_register]] Dense_out_T dense_out;
-    [[intel::fpga_register]] Dense_weights_T dense_weights;
-    [[intel::fpga_register]] Dense_biases_T dense_biases;
     [[intel::fpga_register]] Dense_concat_T dense_in_concat;
     [[intel::fpga_register]] Dense_heads_T dense_out_head;
 
-    //#pragma unroll CONFIG_T::parallelization_factor
-    for (unsigned l0 = 0; l0 < L0; l0++) {
-
-        #pragma unroll 4
-        for (unsigned i = 0; i < I; i++) {
-
-            if (!CONFIG_T::opt_dense)
-                read_token<Dense_in_T, data_pipe, CONFIG_T>(dense_in); // 1xC read
-
-            // If this is attention output we join heads first
-            if (CONFIG_T::opt_dense) {
-                for (unsigned h = 0; h < CONFIG_T::n_head; h++) {
-                    dense_in = data_pipe::read();
-                    for (unsigned c = 0; c < HEAD_DIM_IN; c++) {
-                        dense_in_concat[HEAD_DIM_IN * h + c] = dense_in[c];
-                    }
-                }
-            }
-
-            // Create a temporary config to ensure the types of the local buffers
-            // match what dense_resource expects for its weight_t and bias_t.
-            struct dense_slice_config : CONFIG_T::dense_conf {
-                using weight_t = Dense_weights_T;
-                using bias_t = Dense_biases_T;
-            };
-
-            // Call the dense_resource function with the reordered weights
-            if (!CONFIG_T::opt_dense) {
-                nnet::dense_resource<Dense_in_T, Dense_heads_T, typename CONFIG_T::dense_conf>(dense_in, dense_out_head);
-
-                for (unsigned h = 0; h < CONFIG_T::n_head; h++) {
-                    for (unsigned l = 0; l < HEAD_DIM_OUT; l++) {
-                        dense_out[l] = dense_out_head[HEAD_DIM_OUT * h + l];
-                    }
-                    res_pipe::write(dense_out);
-                }
-            } else {
-                nnet::dense_resource<Dense_concat_T, Dense_out_T, typename CONFIG_T::dense_conf>(dense_in_concat, dense_out);
-                res_pipe::write(dense_out);
-            }
+#ifdef AUTOREG
+    Dense_out_pipe_T dense_out_pipe;
+    while(true){
+        if (exit_task){
+            dense_out_pipe.exit_task = true;
+            res_pipe::write(dense_out_pipe);
+            break;
         }
+#endif
+        //#pragma unroll CONFIG_T::parallelization_factor
+        for (unsigned l0 = 0; l0 < L0; l0++) {
+
+            #pragma unroll 4
+            for (unsigned i = 0; i < I; i++) {
+
+                if constexpr (!CONFIG_T::opt_dense){
+                #ifdef AUTOREG
+                    read_token<Dense_in_T, data_pipe, CONFIG_T>(dense_in, exit_task); // 1xC read
+                    if (exit_task) break;
+                #else
+                    read_token<Dense_in_T, data_pipe, CONFIG_T>(dense_in); // 1xC read
+                #endif
+                }
+
+                // If this is attention output we join heads first
+                if constexpr (CONFIG_T::opt_dense) {
+                    for (unsigned h = 0; h < CONFIG_T::n_head; h++) {
+                    #ifdef AUTOREG
+                        auto dense_in_pipe = data_pipe::read();
+                        if(dense_in_pipe.exit_task) {
+                            exit_task = true;
+                            break;
+                        }
+                        dense_in = dense_in_pipe.data;
+                    #else
+                        dense_in = data_pipe::read();
+                    #endif
+                        for (unsigned c = 0; c < HEAD_DIM_IN; c++) {
+                            dense_in_concat[HEAD_DIM_IN * h + c] = dense_in[c];
+                        }
+                    }
+                #ifdef AUTOREG
+                    if (exit_task) break;
+                #endif
+                }
+
+                // Create a temporary config to ensure the types of the local buffers
+                // match what dense_resource expects for its weight_t and bias_t.
+                struct dense_slice_config : CONFIG_T::dense_conf {
+                    using weight_t = Dense_weights_T;
+                    using bias_t = Dense_biases_T;
+                };
+
+                // Call the dense_resource function with the reordered weights
+                if constexpr (!CONFIG_T::opt_dense) {
+                    nnet::dense_resource<Dense_in_T, Dense_heads_T, typename CONFIG_T::dense_conf>(dense_in, dense_out_head);
+
+                    for (unsigned h = 0; h < CONFIG_T::n_head; h++) {
+                        for (unsigned l = 0; l < HEAD_DIM_OUT; l++) {
+                            dense_out[l] = dense_out_head[HEAD_DIM_OUT * h + l];
+                        }
+                    #ifdef AUTOREG
+                        dense_out_pipe.data = dense_out;
+                        dense_out_pipe.exit_task = false;
+                        res_pipe::write(dense_out_pipe);
+                    #else    
+                        res_pipe::write(dense_out);
+                    #endif
+                    }
+                } else {
+                    nnet::dense_resource<Dense_concat_T, Dense_out_T, typename CONFIG_T::dense_conf>(dense_in_concat, dense_out);
+                    #ifdef AUTOREG
+                        dense_out_pipe.data = dense_out;
+                        dense_out_pipe.exit_task = false;
+                        res_pipe::write(dense_out_pipe);
+                    #else    
+                        res_pipe::write(dense_out);
+                    #endif
+                }
+            }
+            #ifdef AUTOREG
+                if (exit_task) break;
+            #endif
+        }
+#ifdef AUTOREG
     }
+#endif
 }
 
 } // namespace nnet

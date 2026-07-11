@@ -111,7 +111,7 @@ void gru_cell(const data_T &x, h_T &h, const typename CONFIG_T::weight_t &weight
     [[intel::fpga_register]] accum_array_T mat_mul_x_w;
     nnet::dense_resource<data_T, accum_array_T, typename CONFIG_T::mult_config_x>(x, mat_mul_x_w, weights, bias);
 
-    // A matrix containing the values of matrix product between previou state (h) and recurrent weights (recurrent_weights),
+    // A matrix containing the values of matrix product between previous state (h) and recurrent weights (recurrent_weights),
     // for update, reset and candidate state gates, for each of the units
     [[intel::fpga_register]] accum_array_T mat_mul_h_wr;
     nnet::dense_resource<h_T, accum_array_T, typename CONFIG_T::mult_config_h>(h, mat_mul_h_wr, recurrent_weights,
