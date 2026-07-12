@@ -25,7 +25,12 @@ namespace nnet {
  */
 template <class data_arr_T, class data_window_T, class res_pipe, typename CONFIG_T>
 void compute_pool_buffer_1d(const data_arr_T &in_elem,
-                            nnet::shift_reg<typename data_arr_T::value_type, CONFIG_T::in_width> line_buffer[CONFIG_T::n_filt],
+                            #ifdef AUTOREG
+                            nnet::shift_reg<typename data_arr_T::data_type::value_type, CONFIG_T::in_width> 
+                            #else
+                            nnet::shift_reg<typename data_arr_T::value_type, CONFIG_T::in_width> 
+                            #endif
+                            line_buffer[CONFIG_T::n_filt],
                             data_window_T &kernel_window, int &pX, int &sX 
                         #ifdef AUTOREG
                             , bool &exit_task
@@ -53,7 +58,11 @@ void compute_pool_buffer_1d(const data_arr_T &in_elem,
 
     // Step 1 - Shift line buffer
     [[intel::fpga_register]] typename data_T::value_type shift_buffer[CONFIG_T::n_filt];
+#ifdef AUTOREG
+    nnet::shift_line_buffer_1d<data_T, CONFIG_T>(in_elem.data, line_buffer, shift_buffer);
+#else
     nnet::shift_line_buffer_1d<data_T, CONFIG_T>(in_elem, line_buffer, shift_buffer);
+#endif
 
     // Step 2 - Kernel shift
     nnet::kernel_shift_1d<data_T, data_window_T, CONFIG_T>(shift_buffer, kernel_window);
@@ -165,8 +174,12 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void pooling1d_cl_
  */
 template <class data_arr_T, class data_window_T, class res_pipe, typename CONFIG_T>
 void compute_pool_buffer_2d(const data_arr_T &in_elem,
-                            nnet::shift_reg<typename data_T::value_type, CONFIG_T::in_width>
-                                line_buffer[CONFIG_T::pool_height - 1][CONFIG_T::n_filt],
+                            #ifdef AUTOREG
+                            nnet::shift_reg<typename data_arr_T::data_type::value_type, CONFIG_T::in_width>
+                            #else
+                            nnet::shift_reg<typename data_arr_T::value_type, CONFIG_T::in_width>
+                            #endif
+                            line_buffer[CONFIG_T::pool_height - 1][CONFIG_T::n_filt],
                             data_window_T &kernel_window, int &pX, int &pY, int &sX, int &sY                        
                             #ifdef AUTOREG
                             , bool &exit_task
@@ -195,7 +208,12 @@ void compute_pool_buffer_2d(const data_arr_T &in_elem,
 
     // Step 1 - Shift line buffer
     [[intel::fpga_register]] typename data_T::value_type shift_buffer[CONFIG_T::pool_height][CONFIG_T::n_filt];
+#ifdef AUTOREG
+    nnet::shift_line_buffer_2d<data_T, CONFIG_T>(in_elem.data, line_buffer, shift_buffer);
+#else
     nnet::shift_line_buffer_2d<data_T, CONFIG_T>(in_elem, line_buffer, shift_buffer);
+#endif
+
 
     // Step 2 - Kernel shift
     nnet::kernel_shift_2d<data_T, data_window_T, CONFIG_T>(shift_buffer, kernel_window);

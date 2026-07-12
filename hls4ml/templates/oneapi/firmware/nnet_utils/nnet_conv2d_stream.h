@@ -140,7 +140,7 @@ void compute_output_buffer_2d(
         return;
     }
 #else
-    using data_T = typename data_in_T;
+    using data_T = data_in_T;
     using res_T = typename ExtractPipeType<res_pipe>::value_type;
 #endif
 
@@ -237,7 +237,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void conv_2d_cl_st
     int sY = 0;
 
 #ifdef AUTOREG
-while (!exit_task){
+while (true){
 
     // Reset strides for each image
     int pX = 0;
@@ -270,9 +270,8 @@ while (!exit_task){
                 compute_output_buffer_2d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
                     data_pipe::read(), line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY, exit_task);
 
-                if (exit_task) break;
+                if (exit_task) return;
             }
-            if (exit_task) break;
 
         // Input image right-side padding
         PaddingRightWidth:

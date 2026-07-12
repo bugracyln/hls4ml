@@ -405,7 +405,7 @@ SoftmaxExpLoop:
     [[intel::initiation_interval(pipeline)]] 
     for (unsigned i = 0; i < CONFIG_T::n_in / input_arr_size; i++) {
         auto in_pack = data_pipe::read();
-
+#endif
     SoftmaxExpPackLoop:
         #pragma unroll
         for (unsigned j = 0; j < input_arr_size; j++) {

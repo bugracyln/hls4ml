@@ -22,21 +22,27 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void dense_resourc
 
     [[intel::fpga_register]] res_arr_T res;
     
-
 #ifdef AUTOREG
     [[intel::fpga_register]] res_pipe_T out_pipe;
+    while (true){
     [[intel::fpga_register]] data_pipe_T data_pack = data_pipe::read();
+    if (data_pack.exit_task) {
+        out_pipe.exit_task = true;
+        res_pipe::write(out_pipe);
+        break;
+    }
     [[intel::fpga_register]] data_arr_T data = data_pack.data;
 #else
     [[intel::fpga_register]] data_arr_T data = data_pipe::read();
 #endif
 
-    dense_resource<data_arr_T, res_arr_T, CONFIG_T>(data, res);
+        dense_resource<data_arr_T, res_arr_T, CONFIG_T>(data, res);
 
 #ifdef AUTOREG
-    out_pipe.exit_task = data_pack.exit_task;
-    out_pipe.data = res;
-    res_pipe::write(out_pipe);
+        out_pipe.exit_task = data_pack.exit_task;
+        out_pipe.data = res;
+        res_pipe::write(out_pipe);
+    }
 #else
     res_pipe::write(res);
 #endif

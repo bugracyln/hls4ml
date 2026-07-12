@@ -60,7 +60,7 @@ device_global<typename CausalState<data_T, CONFIG_T>::State, decltype(properties
 
 // reads a contraction length unit from stream used for datas of dimension > 2
 // only works with per-I streamed data though, careful about what you stream
-template <class data_T, class data_arr_T, typename CONFIG_T>
+template <class data_T, class data_buf_T, typename CONFIG_T>
 #ifdef AUTOREG
 bool
 #else
@@ -200,9 +200,6 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
     using data1_T = typename data1_buf_T::value_type;
     using res_T = typename res_buf_T::value_type;
 
-    // using accum_T = ac_fixed<2*res_T::width, 2*res_T::i_width, res_T::sign>;
-    // typename CONFIG_T::accum_t;
-
     constexpr unsigned L0 = CONFIG_T::n_free0;
     constexpr unsigned L1 = CONFIG_T::n_free1;
     constexpr unsigned C = CONFIG_T::n_contract;
@@ -216,6 +213,7 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
 
     // initialise the buffers to read into
     [[intel::fpga_register]] data0_T data_vect_buffer[CONFIG_T::contract_dim ? L0 : C];
+    [[intel::fpga_register]] res_pipe_T res_pipe_buffer;
     [[intel::fpga_register]] res_buf_T res_buffer;
 
     //######## REQUIRED AS GLOBAL PER LAYER NOT PER FUNC CALL ########
@@ -225,18 +223,16 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
     auto &ctx_cts = state.ctx_cts;
     //################################################################
 
+    // Lambda to clean BRAMs before exit
+    auto clean_brams = [&](){
+        for (unsigned i = 0; i < I; i++) {
+            ctx_cts[i] = 0;
+            write_ptrs[i] = 0;
+        }
+    };
 
 #ifdef AUTOREG
     while (true) {
-
-        auto in_data_pack = data_pipe::read();
-        auto in_pack = in_data_pack.data;
-
-        if (in_data_pack.exit_task) {
-            out_pack.exit_task = true;
-            res_pipe::write(out_pack);
-            break;
-        }
 #else
     for (unsigned loop = 0; loop < CTX; loop++) {
 #endif
@@ -251,9 +247,12 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
 
                 #ifdef AUTOREG
                     if (read_stateless_pipe<data0_T, data0_buf_T, CONFIG_T>(data0_pipe::read(),data_vect_buffer)){
-                        res_buffer.exit_task = true;
-                        res_pipe::write(res_buffer);
-                        break;
+                        // Since both pipes work simultaneously, drain both before exiting.
+                        data1_pipe::read();
+                        res_pipe_buffer.exit_task = true;
+                        res_pipe::write(res_pipe_buffer);
+                        clean_brams();
+                        return;
                     }
                 #else
                     read_stateless_pipe<data0_T, data0_buf_T, CONFIG_T>(data0_pipe::read(),data_vect_buffer);
@@ -264,7 +263,8 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
                         if (read_causal_pipe<data1_T, data1_buf_T, CONFIG_T>(data1_pipe::read(), i, write_ptrs, ctx_cts, causal_buff)){
                             res_buffer.exit_task = true;
                             res_pipe::write(res_buffer);
-                            break;
+                            clean_brams();
+                            return;
                         }
                     #else
                         read_causal_pipe<data1_T, data1_pipe, CONFIG_T>(i, write_ptrs, ctx_cts, causal_buff);
@@ -318,9 +318,12 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
 
             #ifdef AUTOREG
                 if (read_stateless_pipe<data0_T, data0_buf_T, CONFIG_T>(data0_pipe::read(), data_vect_buffer)){
+                    // Empty the other pipe before exiting
+                    data1_pipe::read();
                     res_buffer.exit_task = true;
                     res_pipe::write(res_buffer);
-                    break;
+                    clean_brams();
+                    return;
                 }
             #else
                 read_stateless_pipe<data0_T, data0_buf_T, CONFIG_T>(data0_pipe::read(), data_vect_buffer);
@@ -331,7 +334,8 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
                 if (causal_pipe.exit_task){
                     res_buffer.exit_task = true;
                     res_pipe::write(res_buffer);
-                    break;
+                    clean_brams();
+                    return;
                 }
                 [[intel::fpga_register]] data1_buf_T causal_data = causal_pipe.data;
             #else
@@ -374,11 +378,8 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
         }
     }
 
-    // CLEAN BRAMS AFTER ITERATIONS END
-    for (unsigned i = 0; i < I; i++) {
-        ctx_cts[i] = 0;
-        write_ptrs[i] = 0;
-    }
+    // Clean BRAMs before exit
+    clean_brams();
 }
 
 } // namespace nnet
