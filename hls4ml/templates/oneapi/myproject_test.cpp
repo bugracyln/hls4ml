@@ -13,16 +13,19 @@
 #include "firmware/myproject.h"
 #include "firmware/parameters.h"
 
+#ifdef AHLS
 #include <sycl/ext/altera/fpga_extensions.hpp>
+#else
+#include <sycl/ext/intel/fpga_extensions.hpp>
+#endif
 
 // For data collection
 #include <errno.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 
-// This lib is irrelevant to Altera HLS
-#if (__INTEL_CLANG_COMPILER < 20250000)
-//#include <sycl/ext/altera/prototype/interfaces.hpp>
+#if (__INTEL_CLANG_COMPILER < 20250000) && !defined(AHLS)
+#include <sycl/ext/intel/prototype/interfaces.hpp>
 #endif
 
 #include "exception_handler.hpp"
@@ -32,12 +35,22 @@
 
 int main(int argc, char **argv) {
 
+#ifdef AHLS
 #if FPGA_SIMULATOR
     auto selector = sycl::ext::altera::fpga_simulator_selector_v;
 #elif FPGA_HARDWARE
     auto selector = sycl::ext::altera::fpga_selector_v;
 #else // #if FPGA_EMULATOR
     auto selector = sycl::ext::altera::fpga_emulator_selector_v;
+#endif
+#else
+#if FPGA_SIMULATOR
+    auto selector = sycl::ext::altera::fpga_simulator_selector_v;
+#elif FPGA_HARDWARE
+    auto selector = sycl::ext::altera::fpga_selector_v;
+#else // #if FPGA_EMULATOR
+    auto selector = sycl::ext::altera::fpga_emulator_selector_v;
+#endif
 #endif
 
     sycl::queue q(selector, fpga_tools::exception_handler, sycl::property::queue::enable_profiling{});

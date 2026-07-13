@@ -1,6 +1,10 @@
 #include "myproject.h"
 #include "parameters.h"
+#ifdef AHLS
 #include <sycl/ext/altera/experimental/task_sequence.hpp>
+#else
+#include <sycl/ext/intel/experimental/task_sequence.hpp>
+#endif
 
 // hls-fpga-machine-learning insert weights
 
@@ -9,7 +13,11 @@
 // hls-fpga-machine-learning define switch pipe groups
 // hls-fpga-machine-learning insert invocation props
 
+#ifdef AHLS
 using sycl::ext::altera::experimental::task_sequence;
+#else
+using sycl::ext::intel::experimental::task_sequence;
+#endif
 
 void MyProject::operator()() const {
     // ****************************************
