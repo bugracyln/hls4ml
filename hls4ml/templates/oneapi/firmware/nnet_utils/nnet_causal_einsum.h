@@ -213,7 +213,9 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
 
     // initialise the buffers to read into
     [[intel::fpga_register]] data0_T data_vect_buffer[CONFIG_T::contract_dim ? L0 : C];
+#ifdef AUTOREG
     [[intel::fpga_register]] res_pipe_T res_pipe_buffer;
+#endif
     [[intel::fpga_register]] res_buf_T res_buffer;
 
     //######## REQUIRED AS GLOBAL PER LAYER NOT PER FUNC CALL ########
@@ -267,7 +269,7 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
                             return;
                         }
                     #else
-                        read_causal_pipe<data1_T, data1_pipe, CONFIG_T>(i, write_ptrs, ctx_cts, causal_buff);
+                        read_causal_pipe<data1_T, data1_buf_T, CONFIG_T>(data1_pipe::read(), i, write_ptrs, ctx_cts, causal_buff);
                     #endif
                         
                     }
