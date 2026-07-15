@@ -843,6 +843,7 @@ def _(node: Softmax):
     inv_inp_t: FixedPrecisionType = node.attributes['inv_inp_t'].precision
     exp_table_t: FixedPrecisionType = node.attributes['exp_table_t'].precision
     accum_t = copy(inv_inp_t)
+    # TODO - COULD ALTER THIS DEPENDING ON THE STREAMED MULTIDIM
     n_slice = node.attributes['n_in'] // node.attributes.get('n_inner', 1) // node.attributes.get('n_outer', 1)
     scale = ceil(log2(n_slice))
     f_exp = exp_table_t.width - exp_table_t.integer
@@ -864,8 +865,8 @@ def _(node: Softmax):
         case 'stable':
             inp_norm_t: FixedPrecisionType = node.attributes['inp_norm_t'].precision
             B = inp_norm_t.width
-        case 'lagency':
-            raise ValueError('lagency softmax is not supported')
+        case 'legacy':
+            raise ValueError('legacy softmax is not supported')
         case 'argmax':
             B = 0
         case _:

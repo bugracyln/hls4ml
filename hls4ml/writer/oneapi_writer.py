@@ -4,6 +4,7 @@ import os
 import tarfile
 from collections import OrderedDict
 from shutil import copyfile
+import copy
 
 import numpy as np
 import yaml
@@ -149,13 +150,14 @@ class OneAPIWriter(Writer):
                                 layer_pipe_id = layer_out_var.pipe_id
                                 layer_pipe_depth = layer_out_var.pragma[1]
                                 layer_pipe_var_type = layer_out_var.type.name
+                                layer_data_packet_type = f'nnet::DataPacket<{layer_pipe_var_type}>'
                                 
                                 if layer.inputs == ['input']:
                                     newline += pipe_template.format(
                                         pipe_name='SW_' + layer_pipe_name,
                                         pipe_id='SW_' + layer_pipe_id,
                                         pipe_depth=layer_pipe_depth,
-                                        pipe_var_type=layer_pipe_var_type,
+                                        pipe_var_type=layer_data_packet_type,
                                     )
 
                                     if inp_pos_stream:
@@ -163,7 +165,7 @@ class OneAPIWriter(Writer):
                                             pipe_name='SW_POS_' + layer_pipe_name,
                                             pipe_id='SW_POS_' + layer_pipe_id,
                                             pipe_depth=layer_pipe_depth,
-                                            pipe_var_type=layer_pipe_var_type, # TODO - DETERMINE SEPERATE TYPE FOR POS?
+                                            pipe_var_type=layer_data_packet_type, # TODO - DETERMINE SEPERATE TYPE FOR POS?
                                         )
 
                                     newline +=  pipe_template.format(
@@ -185,13 +187,23 @@ class OneAPIWriter(Writer):
                                         pipe_name='SW_' + layer_pipe_name,
                                         pipe_id='SW_' + layer_pipe_id,
                                         pipe_depth=layer_pipe_depth,
-                                        pipe_var_type=layer_pipe_var_type,
+                                        pipe_var_type=layer_data_packet_type,
                                     )
                                     
-                            vars = layer.get_variables()
-                            for var in vars:
-                                if var not in model_inputs and var not in model_outputs:
-                                    newline += var.declare_cpp()
+                                vars = layer.get_variables()
+                                for var in vars:
+                                    if var not in model_inputs and var not in model_outputs:
+                                        # Convert to DataPacket type for autoregressive model
+                                        tmp = copy.deepcopy(var) 
+                                        tmp.type.name = f'nnet::DataPacket<{var.type.name}>'  
+                                        newline += tmp.declare_cpp()
+
+                            else:
+                                vars = layer.get_variables()
+                                for var in vars:
+                                    if var not in model_inputs and var not in model_outputs:
+                                        newline += var.declare_cpp()
+
                             
                             newline += '\n'
 
@@ -246,7 +258,7 @@ class OneAPIWriter(Writer):
                     # Add input swich next to host if model is tagged as autoregressive
                     if autoreg_model:
                         for idx in range(len(model_inputs)):
-                            newline += '    ' + f'inp_sw{idx}.async()' + '\n'
+                            newline += '    ' + f'inp_sw{idx}.async();' + '\n'
 
                     for layer in model.get_layers():
                         if io_type != 'io_stream':
@@ -274,7 +286,7 @@ class OneAPIWriter(Writer):
                     # Add output swich next to host if model is tagged as autoregressive
                     if autoreg_model:
                         for idx in range(len(model_outputs)):
-                            newline += '    ' + f'out_sw{idx}.async()' + '\n'
+                            newline += '    ' + f'out_sw{idx}.async();' + '\n'
 
                 # Write the output
                 elif '// hls-fpga-machine-learning return' in line:
@@ -355,6 +367,9 @@ class OneAPIWriter(Writer):
         Args:
             model (ModelGraph): the hls4ml model.
         """
+
+        autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
+        
         filedir = os.path.dirname(os.path.abspath(__file__))
         with (
             open(os.path.join(filedir, '../templates/oneapi/firmware/defines.h')) as f,
@@ -362,15 +377,18 @@ class OneAPIWriter(Writer):
         ):
             for line in f.readlines():
                 if '// hls-fpga-machine-learning insert layer-precision' in line:
+                    layer_io_names = []
                     newline = line
                     all_precision = OrderedDict()
                     for layer in model.get_layers():
+                        layer_io_names += layer.inputs + layer.outputs
                         layer_precision = layer.get_layer_precision()
                         for type_name, type_var in layer_precision.items():
                             # Ensure that layer's types doesn't override existing types
                             # This can happen in case of InplaceVariable types
                             if type_name not in all_precision:
                                 all_precision[type_name] = type_var
+
                     for used_type in all_precision.values():
                         newline += used_type.definition_cpp()
 
@@ -430,8 +448,8 @@ class OneAPIWriter(Writer):
 
                         indent = ' ' * (len(line) - len(line.lstrip(' ')))
                         newline += f'struct switch_config {{\n'
-                        newline += indent + f'static constexpr unsigned switch_id = {switch_id};\n'
-                        newline += indent + f'static constexpr unsigned stop_id = {stop_id};\n'
+                        newline += indent + f'static constexpr unsigned switch_signal = {switch_id};\n'
+                        newline += indent + f'static constexpr unsigned stop_signal = {stop_id};\n'
                         newline += indent + f'static constexpr bool argmax = {argmax};\n'
                         newline += '};\n\n'
 
@@ -1151,7 +1169,8 @@ class OneAPIWriter(Writer):
                         f = FixedPointEmulator(fp_bits, fp_integer, signed=False)
                         b = uint_to_binary(i, N)
                         f.set_msb_bits(b)
-                        real_val = (1.0 / f.exp_float()) * scale
+                        #TODO - Issues encountered related to scaling will fix these promptly
+                        real_val = math.exp(-(f.to_float() * 1))#scale)) 
                         if real_val > maxval:
                             real_val = maxval
                         h_file.write(sep + str(real_val))

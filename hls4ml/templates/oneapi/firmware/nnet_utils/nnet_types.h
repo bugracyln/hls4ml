@@ -66,6 +66,12 @@ template <typename T, int N> struct shift_reg {
     T read(int pos) { return data[pos]; }
 };
 
+template<class data_T> struct DataPacket {
+    using data_type = data_T;
+    data_T data = {}; 
+    bool exit_task = false;
+};
+
 } // namespace nnet
 
 #endif

@@ -12,12 +12,6 @@
 
 namespace nnet {
 
-template<class data_T> struct DataPacket {
-    using data_type = data_T;
-    data_T data = {}; 
-    bool exit_task = false;
-};
-
 template <typename data_T> constexpr data_T minval() {
     if constexpr (std::numeric_limits<data_T>::is_specialized) {
         return std::numeric_limits<data_T>::lowest();

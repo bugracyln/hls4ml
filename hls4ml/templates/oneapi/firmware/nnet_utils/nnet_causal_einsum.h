@@ -68,7 +68,11 @@ void
 #endif
 read_causal_pipe(data_buf_T buff, unsigned i, unsigned *write_ptrs, unsigned *ctx_cts, data_T *causal_buffer) {
 
-    constexpr std::size_t CAUSAL_PIPE_SIZE = std::tuple_size<data_buf_T>::value;
+#ifdef AUTOREG
+    constexpr unsigned CAUSAL_PIPE_SIZE = std::tuple_size<typename data_buf_T::data_type>::value;
+#else
+    constexpr unsigned CAUSAL_PIPE_SIZE = std::tuple_size<data_buf_T>::value;
+#endif
     constexpr unsigned C = CONFIG_T::n_contract;
     constexpr unsigned I = CONFIG_T::n_inplace;
     constexpr unsigned L1 = CONFIG_T::n_free1;
@@ -123,9 +127,6 @@ template <class data_T, class data_buf_T, typename CONFIG_T>
 void read_causal_pipe_ctx(data_buf_T &data_buff, unsigned i, unsigned *write_ptrs, unsigned *ctx_cts,
                           data_T *causal_buffer) {
 
-    constexpr std::size_t CAUSAL_PIPE_SIZE = std::tuple_size<data_buf_T>::value;
-
-    constexpr unsigned C = CONFIG_T::n_contract;
     constexpr unsigned I = CONFIG_T::n_inplace;
     constexpr unsigned L1 = CONFIG_T::n_free1;
     constexpr unsigned CTX = CONFIG_T::n_ctx;
@@ -214,9 +215,10 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
     // initialise the buffers to read into
     [[intel::fpga_register]] data0_T data_vect_buffer[CONFIG_T::contract_dim ? L0 : C];
 #ifdef AUTOREG
-    [[intel::fpga_register]] res_pipe_T res_pipe_buffer;
-#endif
+    [[intel::fpga_register]] res_pipe_T res_buffer;
+#else
     [[intel::fpga_register]] res_buf_T res_buffer;
+#endif
 
     //######## REQUIRED AS GLOBAL PER LAYER NOT PER FUNC CALL ########
     auto &state = causal_state<data1_T, CONFIG_T>.get();
@@ -248,11 +250,11 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
                 for (unsigned l0 = 0; l0 < L0; l0++) {
 
                 #ifdef AUTOREG
-                    if (read_stateless_pipe<data0_T, data0_buf_T, CONFIG_T>(data0_pipe::read(),data_vect_buffer)){
+                    if (read_stateless_pipe<data0_T, data0_pipe_T, CONFIG_T>(data0_pipe::read(),data_vect_buffer)){
                         // Since both pipes work simultaneously, drain both before exiting.
                         data1_pipe::read();
-                        res_pipe_buffer.exit_task = true;
-                        res_pipe::write(res_pipe_buffer);
+                        res_buffer.exit_task = true;
+                        res_pipe::write(res_buffer);
                         clean_brams();
                         return;
                     }
@@ -262,7 +264,7 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
 
                     if (l0 == 0){
                     #ifdef AUTOREG
-                        if (read_causal_pipe<data1_T, data1_buf_T, CONFIG_T>(data1_pipe::read(), i, write_ptrs, ctx_cts, causal_buff)){
+                        if (read_causal_pipe<data1_T, data1_pipe_T, CONFIG_T>(data1_pipe::read(), i, write_ptrs, ctx_cts, causal_buff)){
                             res_buffer.exit_task = true;
                             res_pipe::write(res_buffer);
                             clean_brams();
@@ -319,7 +321,7 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
             } else { // CONTRACT ALONG THE CONTEXT - In this mode L0 == CTX and C is irrelevant
 
             #ifdef AUTOREG
-                if (read_stateless_pipe<data0_T, data0_buf_T, CONFIG_T>(data0_pipe::read(), data_vect_buffer)){
+                if (read_stateless_pipe<data0_T, data0_pipe_T, CONFIG_T>(data0_pipe::read(), data_vect_buffer)){
                     // Empty the other pipe before exiting
                     data1_pipe::read();
                     res_buffer.exit_task = true;

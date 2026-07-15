@@ -2,6 +2,8 @@ from hls4ml.backends.backend import get_backend
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
 from hls4ml.backends.template import FunctionCallTemplate, LayerConfigTemplate
 from hls4ml.model.layers import Activation, BatchNormalization, Dense, HardActivation, ParametrizedActivation, PReLU, Softmax
+from math import prod
+
 
 # Dense templates
 
@@ -234,15 +236,18 @@ hard_activ_config_template = """struct {type}_config{index} : nnet::activ_config
 
 softmax_config_template = """struct {type}_config{index} : nnet::activ_config {{
     static constexpr unsigned n_in = {n_in};
-
+    
     // For multi-dim softmax
-    static const unsigned n_slice = {n_slice};
-    static const unsigned n_outer = {n_outer};
-    static const unsigned n_inner = {n_inner};
+    static constexpr unsigned n_slice = {n_slice};
+    static constexpr unsigned n_outer = {n_outer};
+    static constexpr unsigned n_inner = {n_inner};
 
     // For legacy softmax
     typedef {table_t.name} table_t;
     static constexpr unsigned table_size = {table_size};
+
+    // For masked softmax
+    static constexpr unsigned ctx_len = {context_len};
 
     static constexpr unsigned exp_table_size = {exp_table_size};
     static constexpr unsigned inv_table_size = {inv_table_size};
@@ -318,15 +323,35 @@ class ActivationConfigTemplate(LayerConfigTemplate):
             params.setdefault('exp_scale', 1.0)
             params.setdefault('parallelization_factor', -1)
 
-            n_slice = params['n_in'] // params['n_inner'] // params['n_outer']
-            params['n_slice'] = n_slice
+            # For streamed n_in represents the entire sequence not a single tensor, for example 
+            # (10,32,32) is 10 units of 32x32 tensor stream so figure the slice based on pipe size
+            # and read n_in/tensor_size where tensor_size = pipe_size in streamed mode
+            if node.model.config.get_config_value('IOType') == 'io_stream':
+                # Overwrite inner and outer assuming that axis[1] is the number of tensors streamed in multidim
+                ax = node.attributes['axis']
+                ax = ax if ax >= 0 else len(node.get_input_variable().shape) + ax
+                params['n_outer'] = prod(node.get_input_variable().shape[2:ax])
+                params['n_inner'] = prod(node.get_input_variable().shape[ax+1:])
 
+                n_slice = node.get_input_variable().type.n_elem // params['n_inner'] // params['n_outer']
+                assert n_slice >= 1, (f'Tensor fed to {node.name} has shape {node.get_input_variable().shape}, '
+                                       f'but pipe has size {node.get_input_variable().type.n_elem} resulting in n_slice < 1')
+            else:
+                n_slice = params['n_in'] // params['n_inner'] // params['n_outer']
+
+            params['n_slice'] = n_slice
             params['exp_table_name'] = node.name + '_exp_table'
             params['inv_table_name'] = node.name + '_inv_table'
             params['smax_accum_t'] = params['accum_t'].name
 
             if params['implementation'] == 'stable':
                 self.template = softmax_config_template + softmax_config_table_template_stable
+            
+            # This is for special MHA case wher we use causal masking for softmax to avoid precision 
+            # related inaccuracy arising since minimum value is limited by precision and we cannot 
+            # represent -INF, leading to massive drift during initial samples since most of the arrays 
+            # arrive as minval<data_T>() which is >> -INF
+            params.setdefault('context_len', 0)
 
         return self.template.format(**params)
 

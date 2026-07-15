@@ -3,6 +3,7 @@ from copy import copy
 from warnings import warn
 
 import numpy as np
+import math
 
 from hls4ml.model.attributes import (
     Attribute,
@@ -199,10 +200,15 @@ class Layer(Serializable):
                 self.set_attr('accum_t', accum_t)
 
     def _set_type_t(self, name):
-        has_type_t = any(a for a in self.expected_attributes if a.name == name + '_t' and isinstance(a, TypeAttribute))
-        if has_type_t:
-            type_t = NamedType(*reversed(self.model.config.get_precision(self, name)))
-            self.set_attr(name + '_t', type_t)
+        """Set the precision, but don't overwrite an existing one"""
+        if self.get_attr(f'{name}_t') is None:
+            has_type_t = any(a for a in self.expected_attributes if a.name == name + '_t' and isinstance(a, TypeAttribute))
+            if has_type_t:
+                type_t = NamedType(*reversed(self.model.config.get_precision(self, name)))
+                self.set_attr(name + '_t', type_t)
+        # This improves inv_inp precision by extracting only required integer part for the table - rest is used as fractional.
+        if name == 'inv_inp':
+            self.get_attr(f'{name}_t').integer = 1 + math.ceil(math.log2(max(self.get_input_variable().shape)))
 
     def get_input_node(self, input_name=None):
         if input_name is None:
@@ -1038,7 +1044,7 @@ class Softmax(Activation):
         self._set_type_t('exp_table')
         self._set_type_t('inv_table')
         self._set_type_t('inv_inp')
-        self._set_type_t('inv_norm')
+        self._set_type_t('inp_norm')
 
 
 class TernaryTanh(Activation):

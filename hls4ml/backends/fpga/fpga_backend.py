@@ -111,7 +111,7 @@ class FPGABackend(Backend):
             self.attribute_map[layer] = attrs
 
         act_attrs = self.attribute_map.get(Activation, [])
-        act_attrs.append(ConfigurableAttribute('table_size', default=1024, description=descriptions.table_size))
+        act_attrs.append(ConfigurableAttribute('table_size', default=4096, description=descriptions.table_size))
         act_attrs.append(TypeAttribute('table', default=FixedPrecisionType(18, 8), description=descriptions.table_type))
         self.attribute_map[Activation] = act_attrs
 

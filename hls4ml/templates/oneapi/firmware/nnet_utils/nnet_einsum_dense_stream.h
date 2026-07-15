@@ -83,8 +83,6 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
 
     using Dense_in_data_T = typename Dense_in_T::value_type;
     using Dense_concat_T = nnet::array<Dense_in_data_T, C>;
-    using Dense_weights_T = nnet::array<typename CONFIG_T::weight_t::value_type, L1 * C>;
-    using Dense_biases_T = nnet::array<typename CONFIG_T::bias_t::value_type, L1>;
     using Dense_heads_T = nnet::array<Dense_in_data_T, L1>;
 
     [[intel::fpga_register]] Dense_in_T dense_in;
@@ -137,13 +135,6 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
                     if (exit_task) break;
                 #endif
                 }
-
-                // Create a temporary config to ensure the types of the local buffers
-                // match what dense_resource expects for its weight_t and bias_t.
-                struct dense_slice_config : CONFIG_T::dense_conf {
-                    using weight_t = Dense_weights_T;
-                    using bias_t = Dense_biases_T;
-                };
 
                 // Call the dense_resource function with the reordered weights
                 if constexpr (!CONFIG_T::opt_dense) {
