@@ -6,7 +6,10 @@ Global switch to keep track of where we read from,
 use seperate switches to avoid pipeline stall issues
 */
 #include "nnet_common.h"
+#include "nnet_printf.h"
 #include "nnet_types.h"
+#include <tuple>
+#include <type_traits>
 namespace nnet {
 
 template<class host_pipe, class fb_pipe, class sw_pipe>
@@ -21,8 +24,8 @@ enum class PipeSignal {
 };
 
 struct SignalPack {
-    PipeSignal signal;
-    unsigned writect;
+    PipeSignal signal = PipeSignal::no_feedback;
+    unsigned writect = 0;
 };
 
 
@@ -49,58 +52,67 @@ template <typename data_arr_T, int N, typename res_arr_T> res_arr_T argmax_strea
     constexpr unsigned loops = ceil_log2(N);
     constexpr unsigned padded_len = 1 << loops;
 
-    using data_in_T = typename data_arr_T::value_type;
-    using idx_arr_T = typename nnet::array<ac_fixed<loops, loops, false>, padded_len>;
     using res_T = typename res_arr_T::value_type;
 
+    res_arr_T out;
+
     // Single element requires no pooling so return straight away
-    if constexpr (loops == 0) return static_cast<res_T>(data[0]);
+    if constexpr (loops <= 1)
+        out[0] = static_cast<res_T>(data[0]);
+    else{
+        using idx_arr_T = typename nnet::array<ac_fixed<loops, loops, false>, padded_len>;
+        using data_in_T = typename data_arr_T::value_type;
 
-    idx_arr_T maxval_idxs;
-    res_T maxval_idx = 0;
+        idx_arr_T maxval_idxs;
+        res_T maxval_idx = 0;
 
-    #pragma unroll
-    for (unsigned it = 0; it < padded_len; it++) {
-        maxval_idxs[it] = it;
-    }
-
-    #pragma unroll
-    for (unsigned arr_len = padded_len; arr_len > 1; arr_len /= 2) {
-        unsigned curr_len = arr_len / 2;
         #pragma unroll
-        for (unsigned l = 0; l < curr_len; l++) {
-            data_in_T data_first = ((2 * l) < N) ?  data[2 * l] : minval<data_in_T>();
-            data_in_T data_second = ((2 * l + 1) < N) ? data[2 * l + 1] : minval<data_in_T>();
-            data[l] = (data_first > data_second) ? data_first : data_second;
-            maxval_idxs[l] = (data_first > data_second) ? maxval_idxs[2 * l] : maxval_idxs[2 * l + 1];
+        for (unsigned it = 0; it < padded_len; it++) {
+            maxval_idxs[it] = it;
         }
-    }
 
-    maxval_idx = maxval_idxs[0];
-    return maxval_idx;
+        #pragma unroll
+        for (unsigned arr_len = padded_len; arr_len > 1; arr_len /= 2) {
+            unsigned curr_len = arr_len / 2;
+            #pragma unroll
+            for (unsigned l = 0; l < curr_len; l++) {
+                data_in_T data_first = ((2 * l) < N) ?  data[2 * l] : minval<data_in_T>();
+                data_in_T data_second = ((2 * l + 1) < N) ? data[2 * l + 1] : minval<data_in_T>();
+                data[l] = (data_first > data_second) ? data_first : data_second;
+                maxval_idxs[l] = (data_first > data_second) ? maxval_idxs[2 * l] : maxval_idxs[2 * l + 1];
+            }
+        }
+        out[0] = maxval_idxs[0];
+    }
+    return out;
 }
 
 // We expect nnet::array<arr_T, 1> so a size 1 array for token feedback.
-template <class host_pipe, class feedback_pipe, class switch_pipe, class control_pipe, typename CONFIG_T> void inp_switch() {
+// This unit also converts a vector to token id stream.
+template <class host_pipe, class feedback_pipe, class switch_pipe, class control_pipe, typename CONFIG_T> void input_switch() {
     
     using pipe_T = typename ExtractPipeType<host_pipe>::value_type;
     using data_T = typename pipe_T::value_type;
     using sw_pipe_T = typename ExtractPipeType<switch_pipe>::value_type;
-    constexpr data_T SWITCH_ID = CONFIG_T::switch_signal;
-    constexpr data_T STOP_ID = CONFIG_T::stop_signal;
+    using sw_arr_T = typename sw_pipe_T::data_type;
+    static constexpr unsigned SWITCH_ID = CONFIG_T::switch_signal;
+    static constexpr unsigned STOP_ID = CONFIG_T::stop_signal;
 
     [[intel::fpga_register]] pipe_T in_data;
     [[intel::fpga_register]] bool switch_to_fb = false;
-    [[intel::fpga_memory]] SignalPack signal_pack; // TODO - Check memory attribute
+    [[intel::fpga_register]] SignalPack signal_pack; // TODO - Check memory attribute
+    [[intel::fpga_register]] sw_pipe_T out_data_pack;
 
     while(true){
 
-        if(switch_to_fb){
+        if(switch_to_fb){ // Feedback path is a per-token stream so we expect nnet::array<type,1>
             in_data = feedback_pipe::read();
             if (in_data[0] == STOP_ID){
                 signal_pack.signal = PipeSignal::stop;
+                out_data_pack.exit_task = true;
                 control_pipe::write(signal_pack);
-                break;
+                switch_pipe::write(out_data_pack);
+                return;
             } 
             else if (in_data[0] == SWITCH_ID){
                 switch_to_fb = false;
@@ -111,31 +123,35 @@ template <class host_pipe, class feedback_pipe, class switch_pipe, class control
                 signal_pack.signal = PipeSignal::feedback;
                 control_pipe::write(signal_pack);
             }
+            out_data_pack.data = in_data;
+            out_data_pack.exit_task = signal_pack.signal == PipeSignal::stop;
+            switch_pipe::write(out_data_pack);
         }
-        else{   
+        else{ // This branch expects a single vector DMA transfer of switch IDs, serialises them
             in_data = host_pipe::read();
-            if (in_data[0] == STOP_ID){
-                signal_pack.signal = PipeSignal::stop;
-                control_pipe::write(signal_pack);
-                break;
-            } 
-            else if (in_data[0] == SWITCH_ID){
-                switch_to_fb = true;
-                signal_pack.signal = PipeSignal::feedback;
-                control_pipe::write(signal_pack);
-            } 
-            else {
-                signal_pack.signal = PipeSignal::no_feedback;
-                control_pipe::write(signal_pack);
+            for(unsigned host_it = 0; host_it < std::tuple_size<pipe_T>{}; host_it++){
+                data_T el = in_data[host_it];
+                if (el == STOP_ID){
+                    signal_pack.signal = PipeSignal::stop;
+                    out_data_pack.exit_task = true;
+                    control_pipe::write(signal_pack);
+                    switch_pipe::write(out_data_pack);
+                    return;
+                } 
+                else if (el == SWITCH_ID){
+                    switch_to_fb = true;
+                    signal_pack.signal = PipeSignal::feedback;
+                    control_pipe::write(signal_pack);
+                } 
+                else {
+                    signal_pack.signal = PipeSignal::no_feedback;
+                    control_pipe::write(signal_pack);
+                }
+                out_data_pack.data[0] = el;
+                out_data_pack.exit_task = signal_pack.signal == PipeSignal::stop;
+                switch_pipe::write(out_data_pack);
             }
         }
-
-        sw_pipe_T out_data_pack;
-        out_data_pack.data = in_data;
-        out_data_pack.exit_task = signal_pack.signal == PipeSignal::stop;
-
-        switch_pipe::write(out_data_pack);
-        signal_pack.writect++;
     }
 }
 
@@ -146,22 +162,28 @@ template <class host_pipe, class feedback_pipe, class switch_pipe, class switch_
     using data_T = typename pipe_T::value_type;
     using sw_pipe_T = typename ExtractPipeType<switch_pipe>::value_type;
     using sw_pos_pipe_T = typename ExtractPipeType<switch_pos_pipe>::value_type;
-    static constexpr data_T SWITCH_ID = CONFIG_T::switch_signal;
-    static constexpr data_T STOP_ID = CONFIG_T::stop_signal;
+    static constexpr unsigned SWITCH_ID = CONFIG_T::switch_signal;
+    static constexpr unsigned STOP_ID = CONFIG_T::stop_signal;
 
     [[intel::fpga_register]] pipe_T in_data;
     [[intel::fpga_register]] bool switch_to_fb = false;
-    [[intel::fpga_memory]] SignalPack signal_pack; // TODO - Check memory attribute
+    [[intel::fpga_register]] SignalPack signal_pack; // TODO - Check memory attribute
+    [[intel::fpga_register]] sw_pipe_T out_data_pack;
+    [[intel::fpga_register]] sw_pos_pipe_T out_pos_data_pack;
+    [[intel::fpga_register]] unsigned writect = 0;
 
     while(true){
-        if(switch_to_fb){
+        
+        if(switch_to_fb){ // Feedback path is a per-token stream so we expect nnet::array<type,1>
             in_data = feedback_pipe::read();
-            signal_pack.writect++;
-            
             if (in_data[0] == STOP_ID){
                 signal_pack.signal = PipeSignal::stop;
+                out_data_pack.exit_task = true;
+                out_pos_data_pack.exit_task = true;
                 control_pipe::write(signal_pack);
-                break;
+                switch_pipe::write(out_data_pack);
+                switch_pos_pipe::write(out_pos_data_pack);
+                return;
             } 
             else if (in_data[0] == SWITCH_ID){
                 switch_to_fb = false;
@@ -172,36 +194,45 @@ template <class host_pipe, class feedback_pipe, class switch_pipe, class switch_
                 signal_pack.signal = PipeSignal::feedback;
                 control_pipe::write(signal_pack);
             }
+            out_data_pack.data = in_data;
+            out_data_pack.exit_task = signal_pack.signal == PipeSignal::stop;
+            out_pos_data_pack.data[0] = writect; // Expect nnet::array of size 1
+            out_pos_data_pack.exit_task = signal_pack.signal == PipeSignal::stop;
+            switch_pipe::write(out_data_pack);
+            switch_pos_pipe::write(out_pos_data_pack);
+            writect++;
         }
-        else{   
+        else{ // This branch expects a single vector DMA transfer of switch IDs
             in_data = host_pipe::read();
-            signal_pack.writect++;
-
-            if (in_data[0] == STOP_ID){
-                signal_pack.signal = PipeSignal::stop;
-                control_pipe::write(signal_pack);
-                break;
-            } 
-            else if (in_data[0] == SWITCH_ID){
-                switch_to_fb = true;
-                signal_pack.signal = PipeSignal::feedback;
-                control_pipe::write(signal_pack);
-            } 
-            else {
-                signal_pack.signal = PipeSignal::no_feedback;
-                control_pipe::write(signal_pack);
+            for(unsigned host_it = 0; host_it < std::tuple_size<pipe_T>{}; host_it++){
+                auto el = in_data[host_it];
+                if (in_data[0] == STOP_ID){
+                    signal_pack.signal = PipeSignal::stop;
+                    out_data_pack.exit_task = true;
+                    out_pos_data_pack.exit_task = true;
+                    control_pipe::write(signal_pack);
+                    switch_pipe::write(out_data_pack);
+                    switch_pos_pipe::write(out_pos_data_pack);
+                    return;
+                } 
+                else if (el == SWITCH_ID){
+                    switch_to_fb = true;
+                    signal_pack.signal = PipeSignal::feedback;
+                    control_pipe::write(signal_pack);
+                } 
+                else {
+                    signal_pack.signal = PipeSignal::no_feedback;
+                    control_pipe::write(signal_pack);
+                }
+                out_data_pack.data[0] = el;
+                out_data_pack.exit_task = signal_pack.signal == PipeSignal::stop;
+                out_pos_data_pack.data[0] = writect; // Expect nnet::array of size 1
+                out_pos_data_pack.exit_task = signal_pack.signal == PipeSignal::stop;
+                switch_pipe::write(out_data_pack);
+                switch_pos_pipe::write(out_pos_data_pack);
+                writect++;
             }
         }
-        sw_pipe_T out_data_pack;
-        out_data_pack.data = in_data;
-        out_data_pack.exit_task = signal_pack.signal == PipeSignal::stop;
-
-        sw_pos_pipe_T out_pos_data_pack;
-        out_pos_data_pack.data[0] = signal_pack.writect; // Expect nnet::array of size 1
-        out_pos_data_pack.exit_task = signal_pack.signal == PipeSignal::stop;
-
-        switch_pipe::write(out_data_pack);
-        switch_pos_pipe::write(out_pos_data_pack);
     }
 }
 
@@ -210,12 +241,78 @@ template <class host_pipe, class feedback_pipe, class switch_pipe, class control
     using control_T = typename ExtractPipeType<control_pipe>::value_type;
     using data_in_pipe_T = typename ExtractPipeType<switch_pipe>::value_type;
     using data_in_arr_T = typename data_in_pipe_T::data_type;
-    using data_in_T = typename data_in_arr_T::value_type;
+    using fb_arr_T = typename ExtractPipeType<feedback_pipe>::value_type;
+    static constexpr unsigned data_in_arr_size = std::tuple_size<data_in_arr_T>{};
+    using res_pipe_T = typename ExtractPipeType<host_pipe>::value_type;
+    using res_arr_T = typename res_pipe_T::data_type;
+
+    static_assert(
+        std::is_same_v<data_in_pipe_T, res_pipe_T>, 
+        "output_switch: switch_pipe packet type and host_pipe packet type differ"
+    );
+    
+    res_pipe_T out_data_packet;
+    res_arr_T maxval_idx;
+    
+    while (true) {
+        // Read the control signal first
+        control_T control_pack = control_pipe::read();
+        PipeSignal control_signal = control_pack.signal;
+
+        data_in_pipe_T data_pack = switch_pipe::read();
+
+        if (control_signal == PipeSignal::stop) {
+            //switch_pipe::read(); // Wait for EOS packet (stale discard to empty the pipe)
+            out_data_packet.exit_task = true;
+            host_pipe::write(out_data_packet);
+            return;
+        }
+            
+        if constexpr (CONFIG_T::argmax) {
+            maxval_idx = argmax_stream<data_in_arr_T, data_in_arr_size, res_arr_T>(data_pack.data);
+    
+            out_data_packet.data = maxval_idx;
+            out_data_packet.exit_task = false;
+            host_pipe::write(out_data_packet);
+
+            if (control_signal == PipeSignal::feedback){
+                fb_arr_T out;
+                #pragma unroll
+                for(int i = 0; i < std::tuple_size<fb_arr_T>{}; i++){
+                    out[i] = maxval_idx[0];
+                }
+                feedback_pipe::write(out);
+            }
+        }
+        else{
+            host_pipe::write(data_pack); //TODO - We enforce same var type but should i add a static cast just in case?
+
+            if (control_signal == PipeSignal::feedback){
+                fb_arr_T out;
+                #pragma unroll
+                for(int i = 0; i < std::tuple_size<fb_arr_T>{}; i++){
+                    out[i] = data_pack.data[i];
+                }
+                feedback_pipe::write(out);
+            }
+        }
+    }
+}
+
+
+
+/*
+template <class host_pipe, class feedback_pipe, class switch_pipe, class control_pipe, typename CONFIG_T> void output_switch() {
+
+    using control_T = typename ExtractPipeType<control_pipe>::value_type;
+    using data_in_pipe_T = typename ExtractPipeType<switch_pipe>::value_type;
+    using data_in_arr_T = typename data_in_pipe_T::data_type;
+    using fb_arr_T = typename ExtractPipeType<feedback_pipe>::value_type;
     static constexpr unsigned data_in_arr_size = std::tuple_size<data_in_arr_T>{};
     using res_arr_T = typename ExtractPipeType<host_pipe>::value_type;
     static constexpr bool ARGMAX = CONFIG_T::argmax;
     
-    PipeSignal prev_signal;
+    PipeSignal prev_signal = PipeSignal::no_feedback;
     unsigned readct = 0;
     res_arr_T maxval_idx;
     
@@ -236,7 +333,7 @@ template <class host_pipe, class feedback_pipe, class switch_pipe, class control
                 }
                 else{
                     host_pipe::write(data_pack.data);
-                } 
+                }
             }
             break;
         }
@@ -249,14 +346,22 @@ template <class host_pipe, class feedback_pipe, class switch_pipe, class control
                     if constexpr (ARGMAX) {
                         maxval_idx[0] = argmax_stream<data_in_arr_T, data_in_arr_size, res_arr_T>(data_pack.data);
                         host_pipe::write(maxval_idx);
-                        if (prev_signal == PipeSignal::feedback){
-                            feedback_pipe::write(maxval_idx);
-                        }      
+                        fb_arr_T out;
+                        #pragma unroll
+                        for(int i = 0; i < std::tuple_size<fb_arr_T>{}; i++){
+                            out[i] = maxval_idx[0];
+                        }
+                        feedback_pipe::write(out); 
                     }
                     else{
                         host_pipe::write(data_pack.data);
                         if (prev_signal == PipeSignal::feedback){
-                            feedback_pipe::write(data_pack.data);
+                            fb_arr_T out;
+                            #pragma unroll
+                            for(int i = 0; i < std::tuple_size<fb_arr_T>{}; i++){
+                                out[i] = data_pack.data[i];
+                            }
+                            feedback_pipe::write(out);
                         }                       
                     }  
                                    
@@ -271,14 +376,24 @@ template <class host_pipe, class feedback_pipe, class switch_pipe, class control
                 maxval_idx[0] = argmax_stream<data_in_arr_T, data_in_arr_size, res_arr_T>(data_pack.data);
                 host_pipe::write(maxval_idx);
                 if (control_signal == PipeSignal::feedback){
-                    feedback_pipe::write(maxval_idx);
+                    fb_arr_T out;
+                    #pragma unroll
+                    for(int i = 0; i < std::tuple_size<fb_arr_T>{}; i++){
+                        out[i] = maxval_idx[0];
+                    }
+                    feedback_pipe::write(out);
                 }
             }
             else{
                 host_pipe::write(data_pack.data);
 
                 if (control_signal == PipeSignal::feedback){
-                    feedback_pipe::write(data_pack.data);
+                    fb_arr_T out;
+                    #pragma unroll
+                    for(int i = 0; i < std::tuple_size<fb_arr_T>{}; i++){
+                        out[i] = data_pack.data[i];
+                    }
+                    feedback_pipe::write(out);
                 }
             }
             readct++;
@@ -287,6 +402,7 @@ template <class host_pipe, class feedback_pipe, class switch_pipe, class control
         prev_signal = control_signal;
     }
 }
+*/
 
 /*
 // Maxval helper - TODO: Find if there is alr implemented equivalent

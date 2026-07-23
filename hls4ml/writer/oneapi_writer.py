@@ -310,6 +310,7 @@ class OneAPIWriter(Writer):
         """
 
         project_name = model.config.get_project_name()
+        autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         filedir = os.path.dirname(os.path.abspath(__file__))
         with (
@@ -353,7 +354,13 @@ class OneAPIWriter(Writer):
                 elif '// hls-fpga-machine-learning insert outputs' in line:
                     newline = line
                     for out in model_outputs:
-                        newline += out.declare_cpp(pipe_min_size=out.pragma[1] if out.pragma[0] == 'stream' else 16)
+                        #import pdb; pdb.set_trace()
+                        if autoreg_model:
+                            out_dp = copy.deepcopy(out)
+                            out_dp.type.name = f'nnet::DataPacket<{out_dp.type.name}>'
+                            newline += out_dp.declare_cpp(pipe_min_size=out_dp.pragma[1] if out_dp.pragma[0] == 'stream' else 16)
+                        else:
+                            newline += out.declare_cpp(pipe_min_size=out.pragma[1] if out.pragma[0] == 'stream' else 16)
 
                 # Simply copy line, if no inserts are required
                 else:
@@ -532,6 +539,7 @@ class OneAPIWriter(Writer):
                 )
 
         host_rw_model: bool = model.config.get_config_value('HLSConfig').setdefault('HostRW', 0)
+        autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         with (
             open(os.path.join(filedir, '../templates/oneapi/myproject_test.cpp')) as f,
@@ -544,14 +552,6 @@ class OneAPIWriter(Writer):
                     newline = line.replace('myproject', project_name)
                 elif 'MyProject' in line:
                     newline = line.replace('MyProject', convert_to_pascal_case(project_name))
-
-                #TODO- Check and remove this since now this is moved to cmake file definition, its cleaner
-                #elif '// hls-fpga-machine-learning use host_reads' in line:
-                #    newline = line
-                #    if host_rw_model:
-                #        newline += '#define HOST_READS 1\n'
-                #    else:
-                #        newline += '#define HOST_READS 0\n'
 
                 elif '// hls-fpga-machine-learning crete host mems' in line and host_rw_model:
                     newline = line
@@ -573,14 +573,16 @@ class OneAPIWriter(Writer):
                         newline += indent + indent + 'return 1;\n'
                         newline += indent + '}\n'
 
+                    OUT_BUFFER_CAP = 96
                     for idx, out in enumerate(model_outputs):
+                        out_buffer_size = str(min((OUT_BUFFER_CAP if autoreg_model else np.prod(out.shape)),OUT_BUFFER_CAP) * out.pragma[1]) # pipe_width * num_reads
                         out_type = out.definition_cpp().split(' ')[0]
                         num = idx if idx >= 1 else ''
                         newline += indent + f'using output{num}_item_t = typename {out_type}::value_type;\n'
                         newline += (
                             indent
                             + f'output{num}_item_t* output{num}_vals = '
-                            + f'sycl::malloc_host<output{num}_item_t>({out.size_cpp()}, q);\n'
+                            + f'sycl::malloc_host<output{num}_item_t>({out_buffer_size}, q);\n'
                         )
                         newline += indent + f'if (output{num}_vals == nullptr)' + '{\n'
                         newline += (
@@ -595,7 +597,7 @@ class OneAPIWriter(Writer):
                     for idx, inp in enumerate(model_inputs):
                         num = idx if idx >= 1 else ''
                         name = inp.name
-                        vec_str = indent + f'{inp.name}_item_t {inp.name}_prefill[{inp.size_cpp()}] = ' + '{\n'
+                        vec_str = indent + f'{inp.name}_item_t {inp.name}_prefill[{inp.size_cpp()}] = ' + '{'
                         try:
                             with open(f'{inp.name}_vals.tb') as file:
                                 inp_data = file.readline()
@@ -632,7 +634,7 @@ class OneAPIWriter(Writer):
                     out_names = ','.join([f'output{idx if idx >= 1 else ""}_vals' for idx, out in enumerate(model_outputs)])
                     out_t = ','.join([f'output{idx if idx >= 1 else ""}_item_t' for idx, out in enumerate(model_outputs)])
                     out_pipe_names = ','.join([out.pipe_name for out in model_outputs])
-                    out_sizes = ','.join([out.size_cpp() for out in model_outputs])
+                    out_sizes = ','.join([str(min((OUT_BUFFER_CAP if autoreg_model else np.prod(out.shape)),OUT_BUFFER_CAP)) for out in model_outputs])
 
                     for idx, inp in enumerate(model_inputs):
                         num = idx if idx >= 1 else ''
@@ -653,7 +655,7 @@ class OneAPIWriter(Writer):
                     newline += (
                         indent
                         + 'constexpr unsigned packing = '
-                        + f'{out_sizes}/std::tuple_size<typename nnet::ExtractPipeType<{out_pipe_names}>::value_type>'
+                        + f'{out_sizes}/std::tuple_size<typename nnet::ExtractPipeType<{out_pipe_names}>::value_type{'::data_type' if autoreg_model else ''}>'
                         + '{'
                         + '};\n'
                     )  # TODO: EXTREMELY DODGY FOR OUT SIZE > 1
@@ -671,16 +673,17 @@ class OneAPIWriter(Writer):
                 elif '// hls-fpga-machine-learning write out to file' in line and host_rw_model:
                     newline = line
                     for idx, out in enumerate(model_outputs):
+                        out_total_item_size = str(min((OUT_BUFFER_CAP if autoreg_model else np.prod(out.shape)),OUT_BUFFER_CAP) * out.pragma[1])
                         num = idx if idx >= 1 else ''
                         newline += (
                             indent
                             + f'constexpr unsigned output{num}_pipeOutSize = '
-                            + f'std::tuple_size<typename nnet::ExtractPipeType<{out.pipe_name}>::value_type>'
+                            + f'std::tuple_size<typename nnet::ExtractPipeType<{out.pipe_name}>::value_type{'::data_type' if autoreg_model else ''}>'
                             + '{'
                             + '};\n'
                         )
                         newline += (
-                            indent + 'for (int i = 0; i < 1; i++) ' + '{\n'
+                            indent + f'for (int i = 0; i < {out_total_item_size}; i++) ' + '{\n'
                         )  # TODO: ADJUST FOR NUMBER OF EXPECTED TOKENS BASED ON IF WE ARE DOING AUTOREG MODEL OR NOT
                         newline += indent + indent + f'for (int j = 0; j < output{num}_pipeOutSize; j++) ' + '{\n'
                         newline += (
@@ -688,7 +691,7 @@ class OneAPIWriter(Writer):
                         )
                         newline += indent + indent + '}\n'
                         newline += indent + indent + 'fout << std::endl;\n'
-                        newline += indent + '}'
+                        newline += indent + '}\n'
 
                 # Free memory only if we have the host reads flag
                 elif '// hls-fpga-machine-learning free host mem' in line and host_rw_model:
@@ -781,6 +784,7 @@ class OneAPIWriter(Writer):
 
         filedir = os.path.dirname(os.path.abspath(__file__))
 
+        autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
         host_rw_model: bool = model.config.get_config_value('HLSConfig').setdefault('HostRW', 0)
 
         with (
@@ -871,7 +875,7 @@ class OneAPIWriter(Writer):
                             newline += (
                                 indent
                                 + f'constexpr unsigned packing = {out_sizes}'
-                                + f'/std::tuple_size<typename nnet::ExtractPipeType<{out_pipe_names}>::value_type>'
+                                + f'/std::tuple_size<typename nnet::ExtractPipeType<{out_pipe_names}>::value_type{'::data_type' if autoreg_model else ''}>'
                                 + '{'
                                 + '};\n'
                             )

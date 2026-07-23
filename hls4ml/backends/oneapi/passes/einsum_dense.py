@@ -239,7 +239,7 @@ class EinsumStreamTaskSequenceTemplate(TaskSequenceTemplate):
             params['maxInvoc'] = max_invoc
 
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
-
+        
         if autoreg_model:
             model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
@@ -247,9 +247,9 @@ class EinsumStreamTaskSequenceTemplate(TaskSequenceTemplate):
             if (params['input_pipe'] in model_inp_names):
                 params['input_pipe'] = "SW_" + params['input_pipe']
                 
-            elif (params['output_pipe'] in model_out_names):
+            if (params['output_pipe'] in model_out_names):
                 params['output_pipe'] = "SW_" + params['output_pipe']
-
+                
         return self.template.format(**params)
 
 

@@ -45,6 +45,10 @@ void read_token(Dense_in_T &token_buffer
     // constexpr unsigned I = CONFIG_T::n_inplace;
 
     data_buff_T buff = data_pipe::read();
+    if (buff.exit_task) {
+        exit_task = true;
+        return;
+    }
     
     #pragma unroll 4
     for (unsigned c = 0; c < C; c++) {
@@ -54,10 +58,6 @@ void read_token(Dense_in_T &token_buffer
         token_buffer[c] = buff[c];
     #endif
     }
-
-#ifdef AUTOREG
-    exit_task = buff.exit_task;
-#endif
 }
 
 // weights are already transposed during compile-time in the config
@@ -96,7 +96,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
         if (exit_task){
             dense_out_pipe.exit_task = true;
             res_pipe::write(dense_out_pipe);
-            break;
+            return;
         }
 #endif
         //#pragma unroll CONFIG_T::parallelization_factor
@@ -108,7 +108,11 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
                 if constexpr (!CONFIG_T::opt_dense){
                 #ifdef AUTOREG
                     read_token<Dense_in_T, data_pipe, CONFIG_T>(dense_in, exit_task); // 1xC read
-                    if (exit_task) break;
+                    if (exit_task) {
+                        dense_out_pipe.exit_task = true;
+                        res_pipe::write(dense_out_pipe);
+                        return;
+                    }
                 #else
                     read_token<Dense_in_T, data_pipe, CONFIG_T>(dense_in); // 1xC read
                 #endif
@@ -121,7 +125,9 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
                         auto dense_in_pipe = data_pipe::read();
                         if(dense_in_pipe.exit_task) {
                             exit_task = true;
-                            break;
+                            dense_out_pipe.exit_task = true;
+                            res_pipe::write(dense_out_pipe);
+                            return;
                         }
                         dense_in = dense_in_pipe.data;
                     #else
@@ -131,9 +137,6 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
                             dense_in_concat[HEAD_DIM_IN * h + c] = dense_in[c];
                         }
                     }
-                #ifdef AUTOREG
-                    if (exit_task) break;
-                #endif
                 }
 
                 // Call the dense_resource function with the reordered weights
@@ -163,9 +166,6 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
                     #endif
                 }
             }
-            #ifdef AUTOREG
-                if (exit_task) break;
-            #endif
         }
 #ifdef AUTOREG
     }

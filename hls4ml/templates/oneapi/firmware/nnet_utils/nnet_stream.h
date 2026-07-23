@@ -415,7 +415,6 @@ template <class data_pipe, class res_pipe, int N> void repack_stream() {
     constexpr auto datasize = std::tuple_size<data_T>{};
     constexpr auto ressize = std::tuple_size<res_T>{};
 #endif
-
     if constexpr (datasize == ressize) {
     #ifdef AUTOREG
         while (true){

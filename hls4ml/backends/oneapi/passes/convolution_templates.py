@@ -155,10 +155,10 @@ class Conv1DTaskSequenceTemplate(TaskSequenceTemplate):
             model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
 
-            if (params['input0_pipe'] in model_inp_names):
+            if (params['input_pipe'] in model_inp_names):
                 params['input_pipe'] = "SW_" + params['input_pipe']
                 
-            elif (params['output_pipe'] in model_out_names):
+            if (params['output_pipe'] in model_out_names):
                 params['output_pipe'] = "SW_" + params['output_pipe']
 
         return self.template.format(**params)
@@ -304,7 +304,7 @@ class Conv2DTaskSequenceTemplate(TaskSequenceTemplate):
             if (params['input_pipe'] in model_inp_names):
                 params['input_pipe'] = "SW_" + params['input_pipe']
 
-            elif (params['output_pipe'] in model_out_names):
+            if (params['output_pipe'] in model_out_names):
                 params['output_pipe'] = "SW_" + params['output_pipe']
             
         return self.template.format(**params)

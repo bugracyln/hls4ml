@@ -101,7 +101,7 @@ class BatchNormalizationQuantizedTanhTaskSequenceTemplate(TaskSequenceTemplate):
             if (params['input_pipe'] in model_inp_names):
                 params['input_pipe'] = "SW_" + params['input_pipe']
                 
-            elif (params['output_pipe'] in model_out_names):
+            if (params['output_pipe'] in model_out_names):
                 params['output_pipe'] = "SW_" + params['output_pipe']
 
         return self.template.format(**params)

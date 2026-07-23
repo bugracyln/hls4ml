@@ -26,7 +26,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
             if(in_data_pipe.exit_task){
                 out_data_pipe.exit_task = true;
                 res_pipe::write(out_data_pipe);
-                break;
+                return;
             }
             auto in_data = in_data_pipe.data;
     #else
@@ -37,7 +37,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
             res_arr_T res_pack;
 
         DenseEmbedding2:
-            #pragma unroll CONFIG_T::unroll_factor
+            #pragma unroll CONFIG_T::num_banks
             for (int i = 0; i < CONFIG_T::n_out; i++) {
                 res_pack[i] = CONFIG_T::embeddings[(in_data[0] * CONFIG_T::n_out + i).to_uint()];
             }
@@ -60,7 +60,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
             if(in_data_pipe.exit_task){
                 out_data_pipe.exit_task = true;
                 res_pipe::write(out_data_pipe);
-                break;
+                return;
             }
             auto in_data = in_data_pipe.data;
     #else
@@ -73,7 +73,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
                 res_arr_T res_pack;
 
             DenseEmbedding:
-                #pragma unroll CONFIG_T::unroll_factor
+                #pragma unroll CONFIG_T::num_banks
                 for (int i = 0; i < CONFIG_T::n_out; i++) {
                     res_pack[i] = CONFIG_T::embeddings[(in_data[j] * CONFIG_T::n_out + i).to_uint()];
                 }

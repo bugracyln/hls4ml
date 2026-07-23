@@ -94,13 +94,6 @@ int main(int argc, char **argv) {
     // Set the iterations (number of repeated tests to be performed)
     const unsigned int num_iterations = 10;
 
-// Pre-define tokens to be filled and generated, REMOVE FOR THE LARGE MODEL
-// This is kept currently since pipes are blocking and models are not guaranteed to predict
-// The EOS token.
-#define PREFILL_TOKENS 32
-#define TOTAL_TOKENS 48
-#define GENERATE_TOKENS (TOTAL_TOKENS - PREFILL_TOKENS)
-
 #ifdef HOST_READS
 
     // hls-fpga-machine-learning crete host mems
@@ -147,7 +140,7 @@ int main(int argc, char **argv) {
         // Analyse and record data on the host side
         double ttft = std::chrono::duration<double, std::milli>(first_token_time - start).count();
         double total_time = std::chrono::duration<double>(end - start).count();
-        double num_tokens = TOTAL_TOKENS;
+        double num_tokens = 48; // TODO - THIS IS CURRENTLY WRONG, PASS A COUNTER TO ONE OF THE KERNELS TO COUNT UNTIL END_TASK #########################################################################################################
         double ts = num_tokens / total_time;
         average_ts = iteration > 0 ? ((average_ts * iteration + ts) / (iteration + 1)) : ts;
         average_ttft = iteration > 0 ? ((average_ttft * iteration + ttft) / (iteration + 1)) : ttft;

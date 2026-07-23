@@ -3,6 +3,7 @@
 
 #include <sycl/ext/altera/fpga_extensions.hpp>
 #include <sycl/sycl.hpp>
+#include "nnet_utils/nnet_printf.h"
 
 // This file defines the methods to transfer the data to the kernel. In the HLS flow,
 // these are really part of the testbench. However, in the accelerator (BSP) flow, they are
@@ -79,6 +80,7 @@ template <class... SrcPipePairs> struct DMA_convert_data : SrcPipePairs... {
         auto src = static_cast<SrcPipePair const &>(*this).src;
 
         size_t num_packets = total_inp_size / PacketSize;
+        num_packets = (num_packets >= 1) ? num_packets : 1;
 
 #if defined(IS_BSP)
         sycl::ext::altera::host_ptr<src_T> src_ptr(src);
@@ -129,21 +131,46 @@ template <class src_pipe, class dst_T, class ttft_flag_T> struct DMA_convert_dat
         // First, extract the PipeDataT from the pipe
         using PipeDataType = typename nnet::ExtractPipeType<src_pipe>::value_type;
         // Then, extract the DataT from StreamingBeat
+    #ifdef AUTOREG
+        constexpr auto srcTypeSize = std::tuple_size<typename PipeDataType::data_type>{};
+    #else
         constexpr auto srcTypeSize = std::tuple_size<PipeDataType>{};
+    #endif
 
         [[intel::fpga_register]] PipeDataType packet;
+        [[intel::fpga_register]] bool ttft_recorded = false;
 
+#ifdef AUTOREG
+    size_t i = 0;
+    while (true){
+        packet = src_pipe::read();  
+        if (packet.exit_task) {
+            *ttft_flag = 1;
+            return;
+        }
+#else
         // Drain the output pipe and write result to memory.
         for (size_t i = 0; i < num_packs; i++) {
-            packet = src_pipe::read();
-
+            packet = src_pipe::read();  
+#endif
             #pragma unroll 4
             for (size_t j = 0; j < srcTypeSize; j++) {
+            #ifdef AUTOREG
+                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet.data[j].to_double());
+            #else
                 dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet[j].to_double());
+            #endif  
             }
 
-            if (i == 0)
+            if ((i == 0) && (!ttft_recorded)){
+                ttft_recorded = true;
                 *ttft_flag = 1;
+            }
+                
+
+        #ifdef AUTOREG
+            i = ((i + 1) >= num_packs) ? (i + 1 - num_packs) : (i + 1);
+        #endif
         }
     }
 };
@@ -171,21 +198,43 @@ template <class src_pipe, class dst_T> struct DMA_convert_data_back_bridge_ver {
 #else
         dst_T *dst_ptr(dst);
 #endif
-        // First, extract the PipeDataT from the pipe
+
+    // First, extract the PipeDataT from the pipe
+    #ifdef AUTOREG
         using PipeDataType = typename nnet::ExtractPipeType<src_pipe>::value_type;
+        using PipeArrayType = typename PipeDataType::data_type;
+    #else
+        using PipeDataType = typename nnet::ExtractPipeType<src_pipe>::value_type;
+        using PipeArrayType = PipeDataType;
+    #endif
+
         // Then, extract the DataT from StreamingBeat
-        constexpr auto srcTypeSize = std::tuple_size<PipeDataType>{};
+        constexpr auto srcTypeSize = std::tuple_size<PipeArrayType>{};
 
         [[intel::fpga_register]] PipeDataType packet;
 
         // Drain the output pipe and write result to memory.
+#ifdef AUTOREG
+        size_t i = 0;
+        while (true) {
+            packet = src_pipe::read();
+            if (packet.exit_task) return;
+#else
         for (size_t i = 0; i < num_packs; i++) {
             packet = src_pipe::read();
-
+#endif
             #pragma unroll 4
             for (size_t j = 0; j < srcTypeSize; j++) {
+            #ifdef AUTOREG
+                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet.data[j].to_double());
+            #else
                 dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet[j].to_double());
+            #endif
             }
+
+        #ifdef AUTOREG
+            i = ((i + 1) >= num_packs) ? (i + 1 - num_packs) : (i + 1);
+        #endif
         }
     }
 };

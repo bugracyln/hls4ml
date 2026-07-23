@@ -102,7 +102,7 @@ void compute_output_buffer_1d(
 #ifdef AUTOREG
     using data_T = typename data_in_T::data_type;
     using out_pipe_T = typename ExtractPipeType<res_pipe>::value_type;
-    using res_T = typename out_pipe_T::value_type;
+    using res_T = typename out_pipe_T::data_type;
 
     [[intel::fpga_register]] out_pipe_T out_pipe;
 
