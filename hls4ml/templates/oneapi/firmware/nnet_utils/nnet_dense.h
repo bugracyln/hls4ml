@@ -124,6 +124,7 @@ void dense_rf_lt(const data_T &data, res_T &res, const typename CONFIG_T::weight
     unsigned w_offset = 0;
     unsigned data_offset = 0;
     constexpr unsigned N_BANKS = CONFIG_T::num_banks;    // overestimated val//CONFIG_T::n_in/CONFIG_T::reuse_factor;
+    //constexpr unsigned BANK_SIZE = CONFIG_T::n_out/N_BANKS;
     [[intel::nofusion, intel::speculated_iterations(0)]] // each reuse loop is seperate
     for (unsigned reuse_unit = 0; reuse_unit < CONFIG_T::reuse_factor; reuse_unit++) {
         data_offset = N_BANKS * reuse_unit;
@@ -133,7 +134,9 @@ void dense_rf_lt(const data_T &data, res_T &res, const typename CONFIG_T::weight
                 acc[el] = biases[el];
             #pragma unroll
             for (unsigned i = 0; i < N_BANKS; i++) {
-                acc[el] += data[data_offset + i] * weights[w_offset + i];
+                unsigned d_idx = data_offset + i;
+                //if (d_idx >= BANK_SIZE) continue; 
+                acc[el] += data[d_idx] * weights[w_offset + i];
             }
         }
     }

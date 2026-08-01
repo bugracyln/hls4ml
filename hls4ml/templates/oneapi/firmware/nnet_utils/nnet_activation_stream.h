@@ -12,12 +12,19 @@ namespace nnet {
 //       Linear Activation
 // *************************************************
 template <class data_pipe, class res_pipe, typename CONFIG_T> void linear_stream() {
+
+#ifdef AUTOREG
+    using res_arr_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
+#else
+    using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
+#endif
+
 LinearActLoop:
 #ifdef AUTOREG
     while (true){
 #else
     [[intel::initiation_interval(1)]] 
-    for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<typename ExtractPipeType<res_pipe>::value_type>{}; i++) {
+    for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 #endif
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
@@ -31,7 +38,7 @@ LinearActLoop:
 
     LinearPackLoop:
         #pragma unroll
-        for (int j = 0; j < std::tuple_size<typename ExtractPipeType<res_pipe>::value_type>{}; j++) {
+        for (int j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
         #ifdef AUTOREG    
             out_data.data[j] = in_data.data[j];
         #else
@@ -82,7 +89,6 @@ ReLUActLoop:
                 out_data[j] = 0;
         #endif   
         }
-
         res_pipe::write(out_data);
     }
 }

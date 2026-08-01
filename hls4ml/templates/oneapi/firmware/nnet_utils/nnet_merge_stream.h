@@ -5,14 +5,15 @@ namespace nnet {
 
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void add_stream() {
 
+    // both inputs are the same size
 #ifdef AUTOREG
-    // both inputs are the same size
-    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::data_type::value_type>{};
+    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
 #else
-    // both inputs are the same size
     constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
 #endif
 
 AddLoop:
@@ -23,12 +24,12 @@ AddLoop:
         [[intel::fpga_register]] auto in_data1 = in_data_pipe1.data;
         [[intel::fpga_register]] auto in_data2 = in_data_pipe2.data;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
-        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
-        if (in_data_pipe1.exit_task ||in_data_pipe2.exit_task){
+        if (in_data_pipe1.exit_task || in_data_pipe2.exit_task){
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
-            break;
+            return;
         }
     #else
     [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem / inputSize; i++) {
@@ -41,7 +42,7 @@ AddLoop:
     AddPack:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
-            out_data[j] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data1[j] + in_data2[j]);
+            out_data[j] = static_cast<res_pipe_unit_T>(in_data1[j] + in_data2[j]);
         }
     #ifdef AUTOREG
         out_data_pipe.data = out_data;
@@ -56,11 +57,13 @@ AddLoop:
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void subtract_stream() {
     // both inputs are the same size
 #ifdef AUTOREG
-    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::data_type::value_type>{};
+    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
 #else
     constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
 #endif
 
 SubtractLoop:
@@ -71,7 +74,7 @@ SubtractLoop:
         [[intel::fpga_register]] auto in_data1 = in_data_pipe1.data;
         [[intel::fpga_register]] auto in_data2 = in_data_pipe2.data;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
-        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
         if (in_data_pipe1.exit_task ||in_data_pipe2.exit_task){
             out_data_pipe.exit_task = true;
@@ -89,7 +92,7 @@ SubtractLoop:
     SubtractPack:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
-            out_data[j] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data1[j] - in_data2[j]);
+            out_data[j] = static_cast<res_pipe_unit_T>(in_data1[j] - in_data2[j]);
         }
     #ifdef AUTOREG
         out_data_pipe.data = out_data;
@@ -104,11 +107,13 @@ SubtractLoop:
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void multiply_stream() {
     // both inputs are the same size
 #ifdef AUTOREG
-    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::data_type::value_type>{};
+    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
 #else
     constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
 #endif
 
 MultLoop:
@@ -119,7 +124,7 @@ MultLoop:
         [[intel::fpga_register]] auto in_data1 = in_data_pipe1.data;
         [[intel::fpga_register]] auto in_data2 = in_data_pipe2.data;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
-        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
         if (in_data_pipe1.exit_task ||in_data_pipe2.exit_task){
             out_data_pipe.exit_task = true;
@@ -137,7 +142,7 @@ MultLoop:
     MultPack:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
-            out_data[j] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data1[j] * in_data2[j]);
+            out_data[j] = static_cast<res_pipe_unit_T>(in_data1[j] * in_data2[j]);
         }
     #ifdef AUTOREG
         out_data_pipe.data = out_data;
@@ -152,11 +157,13 @@ MultLoop:
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void average_stream() {
     // both inputs are the same size
 #ifdef AUTOREG
-    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::data_type::value_type>{};
+    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
 #else
     constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
 #endif
 
 AvgLoop:
@@ -167,7 +174,7 @@ AvgLoop:
         [[intel::fpga_register]] auto in_data1 = in_data_pipe1.data;
         [[intel::fpga_register]] auto in_data2 = in_data_pipe2.data;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
-        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
         if (in_data_pipe1.exit_task ||in_data_pipe2.exit_task){
             out_data_pipe.exit_task = true;
@@ -185,7 +192,7 @@ AvgLoop:
     AvgPack:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
-            out_data[j] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(
+            out_data[j] = static_cast<res_pipe_unit_T>(
                 (in_data1[j] + in_data2[j]) * ac_fixed<2, 1, false>(0.5));
         }
     #ifdef AUTOREG
@@ -201,11 +208,13 @@ AvgLoop:
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void maximum_stream() {
     // both inputs are the same size
 #ifdef AUTOREG
-    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::data_type::value_type>{};
+    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
 #else
     constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
 #endif
 
 MaxLoop:
@@ -216,7 +225,7 @@ MaxLoop:
         [[intel::fpga_register]] auto in_data1 = in_data_pipe1.data;
         [[intel::fpga_register]] auto in_data2 = in_data_pipe2.data;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
-        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
         if (in_data_pipe1.exit_task ||in_data_pipe2.exit_task){
             out_data_pipe.exit_task = true;
@@ -235,8 +244,8 @@ MaxLoop:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
             out_data[j] = (in_data1[j] > in_data2[j])
-                              ? static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data1[j])
-                              : static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data2[j]);
+                              ? static_cast<res_pipe_unit_T>(in_data1[j])
+                              : static_cast<res_pipe_unit_T>(in_data2[j]);
         }
     #ifdef AUTOREG
         out_data_pipe.data = out_data;
@@ -251,11 +260,13 @@ MaxLoop:
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void minimum_stream() {
     // both inputs are the same size
 #ifdef AUTOREG
-    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::data_type::value_type>{};
+    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
 #else
     constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
 #endif
 
 MinLoop:
@@ -266,7 +277,7 @@ MinLoop:
         [[intel::fpga_register]] auto in_data1 = in_data_pipe1.data;
         [[intel::fpga_register]] auto in_data2 = in_data_pipe2.data;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
-        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
         if (in_data_pipe1.exit_task ||in_data_pipe2.exit_task){
             out_data_pipe.exit_task = true;
@@ -285,8 +296,8 @@ MinLoop:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
             out_data[j] = (in_data1[j] < in_data2[j])
-                              ? static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data1[j])
-                              : static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data2[j]);
+                              ? static_cast<res_pipe_unit_T>(in_data1[j])
+                              : static_cast<res_pipe_unit_T>(in_data2[j]);
         }
     #ifdef AUTOREG
         out_data_pipe.data = out_data;
@@ -300,14 +311,16 @@ MinLoop:
 
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void concatenate1d_stream() {
 #ifdef AUTOREG
-    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::data_type::value_type>{};
+    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
     [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
-    [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+    [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
     bool exit_task = 0;
 #else
     constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
     [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
 #endif
 
@@ -332,7 +345,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             #pragma unroll
             for (int j = 0; j < input1Size; j++) {
                 out_data[j + (i * input1Size)] =
-                    static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data1[j]);
+                    static_cast<res_pipe_unit_T>(in_data1[j]);
             }
         }
 
@@ -353,7 +366,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             #pragma unroll
             for (int j = 0; j < input2Size; j++) {
                 out_data[j + (i * input2Size) + (CONFIG_T::n_elem1_0)] =
-                    static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data2[j]);
+                    static_cast<res_pipe_unit_T>(in_data2[j]);
             }
         }
 
@@ -378,12 +391,14 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void concatenate2d_0_stream() {
 #ifdef AUTOREG
-    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::data_type::value_type>{};
+    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
     [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
 #else
     constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
 #endif
 
 #ifdef AUTOREG
@@ -396,7 +411,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
         #ifdef AUTOREG
             [[intel::fpga_register]] auto in_data1_pipe = input1_pipe::read();
             [[intel::fpga_register]] auto in_data1 = in_data1_pipe.data;
-            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
             if (in_data1_pipe.exit_task) {
                 exit_task = true;
                 break;
@@ -409,7 +424,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
         ConcatPackInput1:
             #pragma unroll
             for (int k = 0; k < input1Size; k++) {
-                out_data[k] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data1[k]);
+                out_data[k] = static_cast<res_pipe_unit_T>(in_data1[k]);
             }
         #ifdef AUTOREG
             out_data_pipe.data = out_data;
@@ -426,7 +441,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
         #ifdef AUTOREG
             [[intel::fpga_register]] auto in_data2_pipe = input2_pipe::read();
             [[intel::fpga_register]] auto in_data2 = in_data2_pipe.data;
-            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
             if (in_data2_pipe.exit_task) {
                 exit_task = true;
                 break;
@@ -439,7 +454,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
         ConcatPackInput2:
             #pragma unroll
             for (int k = 0; k < input2Size; k++) {
-                out_data[k] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data2[k]);
+                out_data[k] = static_cast<res_pipe_unit_T>(in_data2[k]);
             }
 
         #ifdef AUTOREG
@@ -460,12 +475,14 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void concatenate2d_1_stream() {
 #ifdef AUTOREG
-    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::data_type::value_type>{};
+    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
     [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
 #else
     constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
 #endif
 
 #ifdef AUTOREG
@@ -480,7 +497,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             [[intel::fpga_register]] auto in_data2_pipe = input2_pipe::read();
             [[intel::fpga_register]] auto in_data1 = in_data1_pipe.data;
             [[intel::fpga_register]] auto in_data2 = in_data2_pipe.data;
-            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
             if (in_data1_pipe.exit_task || in_data2_pipe.exit_task){
                 exit_task = true; 
                 break;
@@ -494,13 +511,13 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
         ConcatPackInput1:
             #pragma unroll
             for (int k = 0; k < input1Size; k++) {
-                out_data[k] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data1[k]);
+                out_data[k] = static_cast<res_pipe_unit_T>(in_data1[k]);
             }
 
         ConcatPackInput2:
             #pragma unroll
             for (int k = 0; k < input2Size; k++) {
-                out_data[input1Size + k] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data2[k]);
+                out_data[input1Size + k] = static_cast<res_pipe_unit_T>(in_data2[k]);
             }
         #ifdef AUTOREG
             if(exit_task) break;
@@ -528,12 +545,14 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void concatenate3d_0_stream() {
 #ifdef AUTOREG
-    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::data_type::value_type>{};
+    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
     [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
 #else
     constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
 #endif
 
 #ifdef AUTOREG
@@ -548,7 +567,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             #ifdef AUTOREG
                 [[intel::fpga_register]] auto in_data1_pipe = input1_pipe::read();
                 [[intel::fpga_register]] auto in_data1 = in_data1_pipe.data;
-                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
                 if (in_data1_pipe.exit_task) {
                     exit_task = true;
                     break;
@@ -561,7 +580,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             ConcatPackInput1:
                 #pragma unroll
                 for (int k = 0; k < input1Size; k++) {
-                    out_data[k] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data1[k]);
+                    out_data[k] = static_cast<res_pipe_unit_T>(in_data1[k]);
                 }
 
             #ifdef AUTOREG
@@ -585,7 +604,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             #ifdef AUTOREG
                 [[intel::fpga_register]] auto in_data2_pipe = input2_pipe::read();
                 [[intel::fpga_register]] auto in_data2 = in_data2_pipe.data;
-                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
                 if (in_data2_pipe.exit_task) {
                     exit_task = true;
                     break;
@@ -598,7 +617,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             ConcatPackInput2:
                 #pragma unroll
                 for (int k = 0; k < input2Size; k++) {
-                    out_data[k] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data2[k]);
+                    out_data[k] = static_cast<res_pipe_unit_T>(in_data2[k]);
                 }
 
             #ifdef AUTOREG
@@ -623,12 +642,14 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void concatenate3d_1_stream() {
 #ifdef AUTOREG
-    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::data_type::value_type>{};
+    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
     [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
 #else
     constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
 #endif
 
 #ifdef AUTOREG
@@ -642,7 +663,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             #ifdef AUTOREG
                 [[intel::fpga_register]] auto in_data1_pipe = input1_pipe::read();
                 [[intel::fpga_register]] auto in_data1 = in_data1_pipe.data;
-                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
                 if (in_data1_pipe.exit_task) {
                     exit_task = true;
                     break;
@@ -656,7 +677,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             ConcatPackInput1:
                 #pragma unroll
                 for (int k = 0; k < input1Size; k++) {
-                    out_data[k] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data1[k]);
+                    out_data[k] = static_cast<res_pipe_unit_T>(in_data1[k]);
                 }
             #ifdef AUTOREG
                 out_data_pipe.data = out_data;
@@ -672,7 +693,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             #ifdef AUTOREG
                 [[intel::fpga_register]] auto in_data2_pipe = input2_pipe::read();
                 [[intel::fpga_register]] auto in_data2 = in_data2_pipe.data;
-                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
                 if (in_data2_pipe.exit_task) {
                     exit_task = true;
                     break;
@@ -685,7 +706,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             ConcatPackInput2:
                 #pragma unroll
                 for (int k = 0; k < input2Size; k++) {
-                    out_data[k] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data2[k]);
+                    out_data[k] = static_cast<res_pipe_unit_T>(in_data2[k]);
                 }
 
             #ifdef AUTOREG
@@ -711,12 +732,14 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void concatenate3d_2_stream() {
 #ifdef AUTOREG
-    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::data_type::value_type>{};
-    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::data_type::value_type>{};
+    constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
+    constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type::data_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
     [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
 #else
     constexpr auto input1Size = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type>{};
     constexpr auto input2Size = std::tuple_size<typename ExtractPipeType<input2_pipe>::value_type>{};
+    using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::value_type;
 #endif
 
 #ifdef AUTOREG
@@ -732,7 +755,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
                 [[intel::fpga_register]] auto in_data2_pipe = input2_pipe::read();
                 [[intel::fpga_register]] auto in_data1 = in_data1_pipe.data;
                 [[intel::fpga_register]] auto in_data2 = in_data2_pipe.data;
-                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type out_data;
+                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
                 if (in_data1_pipe.exit_task || in_data2_pipe.exit_task){
                     exit_task = true; 
                     break;
@@ -746,14 +769,14 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             ConcatPackInput1:
                 #pragma unroll
                 for (int k = 0; k < input1Size; k++) {
-                    out_data[k] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data1[k]);
+                    out_data[k] = static_cast<res_pipe_unit_T>(in_data1[k]);
                 }
 
             ConcatPackInput2:
                 #pragma unroll
                 for (int k = 0; k < input2Size; k++) {
                     out_data[input1Size + k] =
-                        static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(in_data2[k]);
+                        static_cast<res_pipe_unit_T>(in_data2[k]);
                 }
             #ifdef AUTOREG
                 out_data_pipe.data = out_data;

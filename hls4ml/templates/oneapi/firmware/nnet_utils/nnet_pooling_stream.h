@@ -39,7 +39,7 @@ void compute_pool_buffer_1d(const data_arr_T &in_elem,
 
     #ifdef AUTOREG
         using data_T = typename data_arr_T::data_type;
-        using res_T = typename ExtractPipeType<res_pipe>::data_type::value_type;
+        using res_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
         [[intel::fpga_register]]  typename ExtractPipeType<res_pipe>::value_type res_pack_pipe;
 
         if (in_elem.exit_task){
@@ -188,7 +188,7 @@ void compute_pool_buffer_2d(const data_arr_T &in_elem,
 
     #ifdef AUTOREG
         using data_T = typename data_arr_T::data_type;
-        using res_T = typename ExtractPipeType<res_pipe>::data_type::value_type;
+        using res_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
         [[intel::fpga_register]]  typename ExtractPipeType<res_pipe>::value_type res_pack_pipe;
 
         if (in_elem.exit_task){
@@ -355,8 +355,8 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
 #ifdef AUTOREG
     using data_pipe_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_pipe_T = typename ExtractPipeType<res_pipe>::value_type;
-    using data_T = typename ExtractPipeType<data_pipe>::data_type::value_type;
-    using res_T = typename ExtractPipeType<res_pipe>::data_type::value_type;
+    using data_T = typename ExtractPipeType<data_pipe>::value_type::data_type;
+    using res_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
 
     [[intel::fpga_register]] res_pipe_T out_data_pipe;
 #else
@@ -422,8 +422,8 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
 #ifdef AUTOREG
     using data_pipe_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_pipe_T = typename ExtractPipeType<res_pipe>::value_type;
-    using data_T = typename ExtractPipeType<data_pipe>::data_type::value_type;
-    using res_T = typename ExtractPipeType<res_pipe>::data_type::value_type;
+    using data_T = typename ExtractPipeType<data_pipe>::value_type::data_type;
+    using res_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
 
     [[intel::fpga_register]] res_pipe_T out_data_pipe;
 #else

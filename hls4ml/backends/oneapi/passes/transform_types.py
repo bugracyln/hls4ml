@@ -30,13 +30,25 @@ class TransformTypes(GlobalOptimizerPass):
         for out_name, var in node.variables.items():
             if io_type == 'io_stream':
                 if out_name in node.model.inputs:
-                    new_var = self.interface_var_converter.convert(var, pragma='stream')
+                    if node.get_attr('token_stream', False):
+                        new_var = self.interface_var_converter.convert(var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1)
+                    else:
+                        new_var = self.interface_var_converter.convert(var, pragma='stream')
                 elif out_name in node.model.outputs:
-                    new_var = self.interface_var_converter.convert(var, pragma='stream')
+                    if node.get_attr('token_stream', False):
+                        new_var = self.interface_var_converter.convert(var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1)
+                    else:
+                        new_var = self.interface_var_converter.convert(var, pragma='stream')
                 elif isinstance(var, InplaceTensorVariable):
-                    new_var = self.inplace_stream_var_converter.convert(var, pragma='stream')
+                    if node.get_attr('token_stream', False):
+                        new_var = self.inplace_stream_var_converter.convert(var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1)
+                    else:
+                        new_var = self.inplace_stream_var_converter.convert(var, pragma='stream')
                 else:
-                    new_var = self.stream_var_converter.convert(var, pragma='stream')
+                    if node.get_attr('token_stream', False):
+                        new_var = self.stream_var_converter.convert(var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1)
+                    else:
+                        new_var = self.stream_var_converter.convert(var, pragma='stream')
             elif io_type == 'io_parallel':
                 if out_name in node.model.inputs:
                     new_var = self.interface_var_converter.convert(var, pragma='intel::fpga_register')

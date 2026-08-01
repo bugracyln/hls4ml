@@ -332,7 +332,7 @@ class ActivationConfigTemplate(LayerConfigTemplate):
                 ax = ax if ax >= 0 else len(node.get_input_variable().shape) + ax
                 params['n_outer'] = prod(node.get_input_variable().shape[2:ax])
                 params['n_inner'] = prod(node.get_input_variable().shape[ax+1:])
-
+                
                 n_slice = node.get_input_variable().type.n_elem // params['n_inner'] // params['n_outer']
                 assert n_slice >= 1, (f'Tensor fed to {node.name} has shape {node.get_input_variable().shape}, '
                                        f'but pipe has size {node.get_input_variable().type.n_elem} resulting in n_slice < 1')

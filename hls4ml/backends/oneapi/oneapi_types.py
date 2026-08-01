@@ -129,7 +129,7 @@ class AggregratedArrayVariableConverter:
         self.prefix = prefix
         self.definition_cls = definition_cls
 
-    def convert(self, tensor_var, pragma='', depth=0, n_pack=1):
+    def convert(self, tensor_var, pragma='', depth=0, n_pack=1, n_elem=0):
         if isinstance(tensor_var, self.definition_cls):  # Already converted
             return tensor_var
 
@@ -137,8 +137,9 @@ class AggregratedArrayVariableConverter:
         if pragma == 'stream':
             if depth == 0:
                 depth = np.prod(tensor_var.shape) // tensor_var.shape[-1]
+            if n_elem == 0:
+                n_elem = tensor_var.shape[-1]
             tensor_var.pragma = ('stream', depth)
-            n_elem = tensor_var.shape[-1]
         else:
             tensor_var.pragma = pragma
             n_elem = tensor_var.size()

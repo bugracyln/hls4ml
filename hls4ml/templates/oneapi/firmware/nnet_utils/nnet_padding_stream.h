@@ -6,7 +6,7 @@ namespace nnet {
 template <class res_pipe, typename CONFIG_T> inline void fill_zero() {
 #ifdef AUTOREG
     [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type res_part_pipe;
-    [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::data_type::value_type res_part;
+    [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type res_part;
 #else
     [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type res_part;
 #endif

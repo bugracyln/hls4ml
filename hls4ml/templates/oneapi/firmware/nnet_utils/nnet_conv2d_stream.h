@@ -113,7 +113,7 @@ template <class data_in_T, class data_window_T, class res_pipe, typename CONFIG_
 void compute_output_buffer_2d(
     const data_in_T &in_elem,
     #ifdef AUTOREG
-    nnet::shift_reg<typename data_in_T::data_type::value_type,
+    nnet::shift_reg<typename data_in_T::value_type::data_type,
     #else
     nnet::shift_reg<typename data_in_T::value_type,
     #endif

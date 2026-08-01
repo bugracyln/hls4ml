@@ -31,7 +31,7 @@ struct einsum_dense_config {
 };
 
 // Read tokens from input stream into a buffer
-template <class Dense_in_T, class data_pipe, typename CONFIG_T> 
+/*template <class Dense_in_T, class data_pipe, typename CONFIG_T> 
 void read_token(Dense_in_T &token_buffer
     #ifdef AUTOREG
     , bool &exit_task
@@ -58,7 +58,7 @@ void read_token(Dense_in_T &token_buffer
         token_buffer[c] = buff[c];
     #endif
     }
-}
+}*/
 
 // weights are already transposed during compile-time in the config
 template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_stream() {
@@ -92,29 +92,31 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
 
 #ifdef AUTOREG
     Dense_out_pipe_T dense_out_pipe;
+    Dense_in_pipe_T dense_in_pipe;
     while(true){
         if (exit_task){
             dense_out_pipe.exit_task = true;
             res_pipe::write(dense_out_pipe);
             return;
         }
-#endif
+#else
         //#pragma unroll CONFIG_T::parallelization_factor
         for (unsigned l0 = 0; l0 < L0; l0++) {
-
+#endif
             #pragma unroll 4
             for (unsigned i = 0; i < I; i++) {
 
                 if constexpr (!CONFIG_T::opt_dense){
                 #ifdef AUTOREG
-                    read_token<Dense_in_T, data_pipe, CONFIG_T>(dense_in, exit_task); // 1xC read
-                    if (exit_task) {
+                    dense_in_pipe = data_pipe::read(); // 1xC read
+                    if (dense_in_pipe.exit_task) {
                         dense_out_pipe.exit_task = true;
                         res_pipe::write(dense_out_pipe);
                         return;
                     }
+                    dense_in = dense_in_pipe.data;
                 #else
-                    read_token<Dense_in_T, data_pipe, CONFIG_T>(dense_in); // 1xC read
+                    dense_in = data_pipe::read(); // 1xC read
                 #endif
                 }
 
@@ -168,7 +170,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
             }
         }
 #ifdef AUTOREG
-    }
+    //}
 #endif
 }
 

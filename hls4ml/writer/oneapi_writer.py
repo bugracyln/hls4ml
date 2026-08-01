@@ -150,14 +150,21 @@ class OneAPIWriter(Writer):
                                 layer_pipe_id = layer_out_var.pipe_id
                                 layer_pipe_depth = layer_out_var.pragma[1]
                                 layer_pipe_var_type = layer_out_var.type.name
+                                layer_unit_precision = layer_out_var.type.precision
+                                layer_pipe_var_unit_type_decl = (f'using unit_{layer_pipe_var_type} = '
+                                                                 f'ac_fixed<{layer_unit_precision.width}, {layer_unit_precision.integer}, '
+                                                                 f'{'true' if layer_unit_precision.signed else 'false'}>;\n')
+                                layer_pipe_var_unit_type = f'nnet::array<unit_{layer_pipe_var_type}, 1>'
+                                layer_pipe_var_unit_data_packet_type = f'nnet::DataPacket<{layer_pipe_var_unit_type}>'
                                 layer_data_packet_type = f'nnet::DataPacket<{layer_pipe_var_type}>'
                                 
                                 if layer.inputs == ['input']:
+                                    newline += layer_pipe_var_unit_type_decl
                                     newline += pipe_template.format(
                                         pipe_name='SW_' + layer_pipe_name,
                                         pipe_id='SW_' + layer_pipe_id,
                                         pipe_depth=layer_pipe_depth,
-                                        pipe_var_type=layer_data_packet_type,
+                                        pipe_var_type=layer_pipe_var_unit_data_packet_type,
                                     )
 
                                     if inp_pos_stream:
@@ -165,14 +172,14 @@ class OneAPIWriter(Writer):
                                             pipe_name='SW_POS_' + layer_pipe_name,
                                             pipe_id='SW_POS_' + layer_pipe_id,
                                             pipe_depth=layer_pipe_depth,
-                                            pipe_var_type=layer_data_packet_type, # TODO - DETERMINE SEPERATE TYPE FOR POS?
+                                            pipe_var_type=layer_pipe_var_unit_data_packet_type, # TODO - DETERMINE SEPERATE TYPE FOR POS?
                                         )
 
                                     newline +=  pipe_template.format(
                                         pipe_name='FB_' + layer_pipe_name,
                                         pipe_id='FB_' + layer_pipe_id,
                                         pipe_depth=layer_pipe_depth,
-                                        pipe_var_type=layer_pipe_var_type,
+                                        pipe_var_type=layer_pipe_var_unit_type,
                                     )
 
                                     newline +=  pipe_template.format(
@@ -230,12 +237,13 @@ class OneAPIWriter(Writer):
 
                         if autoreg_model:
 
-                            #assert len(model_inputs) == len(model_outputs), 'Output is not feeding back the correct number of inputs.'
+                            assert len(model_inputs) == len(model_outputs), 'Output is not feeding back the correct number of inputs.'
 
                             for idx, inp in enumerate(model_inputs):
                                 name = inp.pipe_name
                                 if inp_pos_stream:
-                                    in_ts = f'task_sequence<nnet::input_switch<{name}, {'FB_' + name}, {'SW_' + name}, {'SW_POS_' + name}, SwitchControl{idx}, switch_config>{invoc_props} inp_sw{idx};'
+                                    #in_ts = f'task_sequence<nnet::input_switch<{name}, {'FB_' + name}, {'SW_' + name}, {'SW_POS_' + name}, SwitchControl{idx}, switch_config>{invoc_props} inp_sw{idx};'
+                                    in_ts = f'task_sequence<nnet::input_switch<{name}, {'FB_' + name}, {'SW_' + name}, SwitchControl{idx}, switch_config>{invoc_props} inp_sw{idx};'
                                 else:
                                     in_ts = f'task_sequence<nnet::input_switch<{name}, {'FB_' + name}, {'SW_' + name}, SwitchControl{idx}, switch_config>{invoc_props} inp_sw{idx};'
                                 newline += '    ' + in_ts + '\n'
@@ -311,6 +319,9 @@ class OneAPIWriter(Writer):
 
         project_name = model.config.get_project_name()
         autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
+        argmax = False
+        if autoreg_model:
+            argmax: bool = model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('Argmax', False)
 
         filedir = os.path.dirname(os.path.abspath(__file__))
         with (
@@ -340,7 +351,13 @@ class OneAPIWriter(Writer):
                 elif '// hls-fpga-machine-learning insert inputs' in line:
                     newline = line
                     for inp in model_inputs:
-                        newline += inp.declare_cpp(pipe_min_size=inp.pragma[1] if inp.pragma[0] == 'stream' else 16)
+                        # Autoreg model is per-token stream so pipes are narrowed until embedding layer, so we scale the input
+                        if autoreg_model:
+                            inp_arr = copy.deepcopy(inp)
+                            inp_arr.type.name = f'arr_{inp_arr.type.name}'
+                            newline += inp_arr.declare_cpp(pipe_min_size=inp.pragma[1] if inp.pragma[0] == 'stream' else 16)
+                        else:
+                            newline += inp.declare_cpp(pipe_min_size=inp.pragma[1] if inp.pragma[0] == 'stream' else 16)
 
                 # Insert weights
                 elif '// hls-fpga-machine-learning insert weights' in line:
@@ -354,10 +371,12 @@ class OneAPIWriter(Writer):
                 elif '// hls-fpga-machine-learning insert outputs' in line:
                     newline = line
                     for out in model_outputs:
-                        #import pdb; pdb.set_trace()
                         if autoreg_model:
                             out_dp = copy.deepcopy(out)
-                            out_dp.type.name = f'nnet::DataPacket<{out_dp.type.name}>'
+                            if argmax:
+                                out_dp.type.name = f'nnet::DataPacket<unit_{out_dp.type.name}>'
+                            else:
+                                out_dp.type.name = f'nnet::DataPacket<{out_dp.type.name}>'
                             newline += out_dp.declare_cpp(pipe_min_size=out_dp.pragma[1] if out_dp.pragma[0] == 'stream' else 16)
                         else:
                             newline += out.declare_cpp(pipe_min_size=out.pragma[1] if out.pragma[0] == 'stream' else 16)
@@ -376,6 +395,11 @@ class OneAPIWriter(Writer):
         """
 
         autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
+        argmax = False
+        if autoreg_model:
+            argmax: bool = model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('Argmax', False)
+        model_inputs = model.get_input_variables()
+        model_outputs = {layer.name : layer.type for layer in model.get_output_variables()}
         
         filedir = os.path.dirname(os.path.abspath(__file__))
         with (
@@ -390,11 +414,27 @@ class OneAPIWriter(Writer):
                     for layer in model.get_layers():
                         layer_io_names += layer.inputs + layer.outputs
                         layer_precision = layer.get_layer_precision()
+
+                        if argmax and (layer.get_output_variable().name in model_outputs.keys()):
+                            layer_type = model_outputs[layer.get_output_variable().name]
+                            lay_prec = layer_type.precision
+                            # TODO - Maybe fix precision here to have smth better?
+                            newline += f'typedef nnet::array<ac_fixed<{lay_prec.width},{lay_prec.width-1},{'true' if lay_prec.signed else 'false'}>, 1> unit_{layer_type.name};\n'
+
+
                         for type_name, type_var in layer_precision.items():
                             # Ensure that layer's types doesn't override existing types
                             # This can happen in case of InplaceVariable types
                             if type_name not in all_precision:
                                 all_precision[type_name] = type_var
+
+                            if autoreg_model:
+                                inp_vars = {var.type.name : var.shape[-1] for var in model.get_input_variables()}
+                                if type_name in inp_vars.keys():
+                                    tmp_var = copy.deepcopy(type_var)
+                                    tmp_var.name = f'arr_{tmp_var.name}'
+                                    tmp_var.n_elem = inp_vars[type_name]
+                                    all_precision['arr_'+type_name] = tmp_var
 
                     for used_type in all_precision.values():
                         newline += used_type.definition_cpp()
@@ -447,16 +487,23 @@ class OneAPIWriter(Writer):
 
                         switch_id =  model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('SwitchStateID', None)
                         stop_id =  model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('StopStateID', None)
+                        max_iterations =  model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('MaxIterations', None)
                         argmax =  model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('Argmax', False) if autoreg_model else False
                         argmax = 'false' if argmax != True else 'true'
 
                         assert (switch_id is not None) and (stop_id is not None), ("Switch/Stop conditions are undefined, "
                         "pass those as dictionary arguments: 'SwitchStateID' and 'StopStateID'")
 
+                        MAX_ITER = 1024
+                        if max_iterations is None:
+                            print(f"Warning: Max Iterations is not set, default value of {MAX_ITER} used.")
+                            max_iterations = MAX_ITER
+
                         indent = ' ' * (len(line) - len(line.lstrip(' ')))
                         newline += f'struct switch_config {{\n'
                         newline += indent + f'static constexpr unsigned switch_signal = {switch_id};\n'
                         newline += indent + f'static constexpr unsigned stop_signal = {stop_id};\n'
+                        newline += indent + f'static constexpr size_t max_iterations = {max_iterations};\n'
                         newline += indent + f'static constexpr bool argmax = {argmax};\n'
                         newline += '};\n\n'
 
@@ -573,7 +620,7 @@ class OneAPIWriter(Writer):
                         newline += indent + indent + 'return 1;\n'
                         newline += indent + '}\n'
 
-                    OUT_BUFFER_CAP = 96
+                    OUT_BUFFER_CAP = 128
                     for idx, out in enumerate(model_outputs):
                         out_buffer_size = str(min((OUT_BUFFER_CAP if autoreg_model else np.prod(out.shape)),OUT_BUFFER_CAP) * out.pragma[1]) # pipe_width * num_reads
                         out_type = out.definition_cpp().split(' ')[0]

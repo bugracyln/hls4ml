@@ -69,6 +69,7 @@ class OneAPIBackend(FPGABackend):
         streaming_flow = register_flow('streaming', streaming_passes, requires=[init_flow], backend=self.name)
 
         oneapi_types = [
+            'oneapi:tag_token_stream',
             'oneapi:transform_types',
             'oneapi:register_bram_weights',
             'oneapi:apply_resource_strategy',

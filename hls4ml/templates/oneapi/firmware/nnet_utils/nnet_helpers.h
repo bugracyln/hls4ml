@@ -35,6 +35,23 @@ constexpr unsigned ceil_log2(unsigned x) {
     return res;
 }
 
+constexpr unsigned floor_log2(unsigned x) {
+    if (x == 0)
+        return 0;
+    unsigned res = 0;
+    while (x > 0) {
+        x >>= 1;
+        res++;
+    }
+    return res-1;
+}
+
+// This func takes the input size and rounds to nearest power of 2
+constexpr unsigned numbanks_round(unsigned x){
+    unsigned p = floor_log2(x);
+    return 1 << p;
+}
+
 template <class srcType, class dest_pipe, size_t SIZE> void convert_data(sycl::queue &q, srcType *src) {
     constexpr auto dstTypeSize = std::tuple_size<typename ExtractPipeType<dest_pipe>::value_type>{};
     for (size_t i = 0; i < SIZE / dstTypeSize; i++) {

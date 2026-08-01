@@ -20,7 +20,7 @@ dense_config_template = """struct config{index}_dense : nnet::dense_config {{
     static constexpr unsigned bf_pad = 0;
 
     static constexpr unsigned reuse_factor = {reuse};
-    static constexpr unsigned num_banks = DIV_ROUNDUP(n_in, reuse_factor);
+    static constexpr unsigned num_banks = nnet::numbanks_round(DIV_ROUNDUP(n_in, reuse_factor));
     static constexpr unsigned compressed_block_factor = DIV_ROUNDUP(n_nonzeros, reuse_factor);
     static constexpr unsigned reuse_factor_rounded = reuse_factor + rf_pad;
     static constexpr unsigned block_factor = DIV_ROUNDUP(n_in*n_out, reuse_factor);
