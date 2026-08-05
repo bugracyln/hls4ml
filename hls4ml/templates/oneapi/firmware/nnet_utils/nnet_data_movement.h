@@ -1,7 +1,11 @@
 #ifndef NNET_DATA_MOVEMENT_H
 #define NNET_DATA_MOVEMENT_H
 
+#ifdef AHLS
 #include <sycl/ext/altera/fpga_extensions.hpp>
+#else
+#include <sycl/ext/intel/fpga_extensions.hpp>
+#endif
 #include <sycl/sycl.hpp>
 #include "nnet_utils/nnet_printf.h"
 
@@ -54,9 +58,15 @@ template <class src_T, class Pipe> struct SrcPipePair {
     sycl::ext::oneapi::experimental::annotated_arg<
         src_T *,
         decltype(sycl::ext::oneapi::experimental::properties{
+        #ifdef AHLS
             sycl::ext::altera::experimental::latency<0>, sycl::ext::altera::experimental::dwidth<16>,
             sycl::ext::altera::experimental::buffer_location<kInputBufferLocation>,
             sycl::ext::altera::experimental::read_write_mode_read, sycl::ext::altera::experimental::wait_request_requested})>
+        #else
+            sycl::ext::intel::experimental::latency<0>, sycl::ext::intel::experimental::dwidth<16>,
+            sycl::ext::intel::experimental::buffer_location<kInputBufferLocation>,
+            sycl::ext::intel::experimental::read_write_mode_read, sycl::ext::intel::experimental::wait_request_requested})>
+        #endif
         src;
 #else
     src_T *const src;
@@ -108,10 +118,17 @@ template <class src_pipe, class dst_T, class ttft_flag_T> struct DMA_convert_dat
     // Without BSP, instantiate an Avalon Memory Mapped Host to write to host.
     sycl::ext::oneapi::experimental::annotated_arg<
         dst_T *, decltype(sycl::ext::oneapi::experimental::properties{
+                #ifdef AHLS
                      sycl::ext::altera::experimental::latency<0>, sycl::ext::altera::experimental::dwidth<16>,
                      sycl::ext::altera::experimental::buffer_location<kOutputBufferLocation>,
                      sycl::ext::altera::experimental::read_write_mode_write,
                      sycl::ext::altera::experimental::wait_request_requested})>
+                #else
+                     sycl::ext::intel::experimental::latency<0>, sycl::ext::intel::experimental::dwidth<16>,
+                     sycl::ext::intel::experimental::buffer_location<kOutputBufferLocation>,
+                     sycl::ext::intel::experimental::read_write_mode_write,
+                     sycl::ext::intel::experimental::wait_request_requested})>
+                #endif
 #else
     // USM pointer, otherwise.
     dst_T *const
@@ -180,10 +197,17 @@ template <class src_pipe, class dst_T> struct DMA_convert_data_back_bridge_ver {
     // Without BSP, instantiate an Avalon Memory Mapped Host to write to host.
     sycl::ext::oneapi::experimental::annotated_arg<
         dst_T *, decltype(sycl::ext::oneapi::experimental::properties{
+                #ifdef AHLS
                      sycl::ext::altera::experimental::latency<0>, sycl::ext::altera::experimental::dwidth<16>,
                      sycl::ext::altera::experimental::buffer_location<kOutputBufferLocation>,
                      sycl::ext::altera::experimental::read_write_mode_write,
                      sycl::ext::altera::experimental::wait_request_requested})>
+                #else
+                     sycl::ext::intel::experimental::latency<0>, sycl::ext::intel::experimental::dwidth<16>,
+                     sycl::ext::intel::experimental::buffer_location<kOutputBufferLocation>,
+                     sycl::ext::intel::experimental::read_write_mode_write,
+                     sycl::ext::intel::experimental::wait_request_requested})>
+                #endif
 #else
     // USM pointer, otherwise.
     dst_T *const

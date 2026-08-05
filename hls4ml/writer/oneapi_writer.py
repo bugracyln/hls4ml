@@ -5,6 +5,7 @@ import tarfile
 from collections import OrderedDict
 from shutil import copyfile
 import copy
+import shutil
 
 import numpy as np
 import yaml
@@ -107,7 +108,7 @@ class OneAPIWriter(Writer):
         autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
         inp_pos_stream: bool =  model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('InpPosStream', False) if autoreg_model else False
         maxInvoc = model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
-        invoc_props = ',ts_invoc_props>' if maxInvoc is not None else '>'
+        invoc_props = (',ts_invoc_props>' if shutil.which('ahls') else f',{maxInvoc},{maxInvoc}>') if maxInvoc is not None else '>'
 
         with (
             open(os.path.join(filedir, '../templates/oneapi/firmware/myproject.cpp')) as f,
@@ -138,8 +139,9 @@ class OneAPIWriter(Writer):
                         if autoreg_model:
                             new_layers = []
                             opt_names = [layer.name for layer in model_outputs]
+                            backend_name = 'altera' if shutil.which('ahls') else 'intel'
                             pipe_template = ('class {pipe_id};\nusing {pipe_name} = '
-                                             'sycl::ext::altera::experimental::pipe<'
+                                             f'sycl::ext::{backend_name}::experimental::pipe<'
                                              '{pipe_id}, {pipe_var_type}, {pipe_depth}>;\n')
                             
                         for idx, layer in enumerate(model.get_layers()):
@@ -214,7 +216,7 @@ class OneAPIWriter(Writer):
                             
                             newline += '\n'
 
-                elif '// hls-fpga-machine-learning insert invocation props' in line and maxInvoc is not None:
+                elif '// hls-fpga-machine-learning insert invocation props' in line and maxInvoc is not None and shutil.which('ahls'):
                     newline = line
                     newline += indent + 'using ts_invoc_props = decltype(sycl::ext::oneapi::experimental::properties{\n'
                     newline += indent + indent + f'sycl::ext::altera::experimental::invocation_capacity<{maxInvoc}>,\n'
@@ -990,7 +992,7 @@ class OneAPIWriter(Writer):
                     if autoreg_model:
                         line += f'\n\nadd_compile_definitions(AUTOREG)\n'
                     if host_rw_model:
-                        line += f'add_compile_definitions(HOST_READS)\n' #TODO - TEST THESE COMPILE TIME DEFINITIONS
+                        line += f'add_compile_definitions(HOST_READS)\n'
 
                 fout.write(line)
 

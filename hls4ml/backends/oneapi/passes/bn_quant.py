@@ -1,4 +1,5 @@
 import numpy as np
+import shutil
 
 from hls4ml.backends.fpga.fpga_layers import BatchNormalizationQuantizedTanh
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
@@ -37,7 +38,7 @@ batchnorm_quantized_tanh_task_sequence_template = (
 )
 
 batchnorm_quantized_tanh_task_sequence_template_max_invoc = (
-    'task_sequence<nnet::normalize_{quantize}_tanh_stream<{input_pipe}, {output_pipe}, {config}>,ts_invoc_props> {name};'
+    'task_sequence<nnet::normalize_{quantize}_tanh_stream<{input_pipe}, {output_pipe}, {config}>,{maxinvoc}>  {name};'
 )
 
 batchnorm_quantized_tanh_stream_function_template = '{name}.async({threshold});'
@@ -90,7 +91,7 @@ class BatchNormalizationQuantizedTanhTaskSequenceTemplate(TaskSequenceTemplate):
         max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
         if max_invoc is not None:
             self.template = batchnorm_quantized_tanh_task_sequence_template_max_invoc
-            params['maxInvoc'] = max_invoc
+            params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
 
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 

@@ -1,5 +1,6 @@
 """The clone templates in the fpga backend are not enough for oneAPI, so this adds the missing parts"""
 
+import shutil
 from hls4ml.backends.fpga.passes.clone import Clone
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
 
@@ -21,10 +22,12 @@ class CloneTaskSequenceTemplate(TaskSequenceTemplate):
 
         max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
         if max_invoc is not None:
+            
             template = (
-                'task_sequence<nnet::clone_stream<{input_pipe},' + f'{output_pipes}, {{size}}>,ts_invoc_props> {{name}};'
+                f'task_sequence<nnet::clone_stream<{{input_pipe}}, {output_pipes}, {{size}}>, {{maxinvoc}}>  {{name}};'
             )
-            params['maxInvoc'] = max_invoc
+
+            params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
     
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 

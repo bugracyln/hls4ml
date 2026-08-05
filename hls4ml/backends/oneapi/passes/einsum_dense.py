@@ -1,3 +1,4 @@
+import shutil
 from hls4ml.backends.backend import get_backend
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
 from hls4ml.backends.template import FunctionCallTemplate, LayerConfigTemplate
@@ -87,7 +88,7 @@ einsum_dense_stream_function_template = (
 )
 
 einsum_dense_stream_function_template_max_invoc = (
-    'task_sequence<nnet::einsum_dense_stream<{input_pipe}, {output_pipe}, {config}>,ts_invoc_props> {name};'
+    'task_sequence<nnet::einsum_dense_stream<{input_pipe}, {output_pipe}, {config}>,{maxinvoc}>  {name};'
 )
 
 einsum_dense_stream_function_template_async = '{name}.async();'
@@ -236,7 +237,7 @@ class EinsumStreamTaskSequenceTemplate(TaskSequenceTemplate):
         max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
         if max_invoc is not None:
             self.template = einsum_dense_stream_function_template_max_invoc
-            params['maxInvoc'] = max_invoc
+            params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
 
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
         

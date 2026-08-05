@@ -1,4 +1,5 @@
 import numpy as np
+import shutil
 
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
 from hls4ml.backends.template import FunctionCallTemplate, LayerConfigTemplate
@@ -40,10 +41,10 @@ zeropad2d_task_sequence_template = (
 )
 
 zeropad1d_task_sequence_template_max_invoc = (
-    'task_sequence<nnet::zeropad1d_{data_format}_stream<{input_pipe}, {output_pipe}, {config}>,ts_invoc_props> {name};'
+    'task_sequence<nnet::zeropad1d_{data_format}_stream<{input_pipe}, {output_pipe}, {config}>,{maxinvoc}>  {name};'
 )
 zeropad2d_task_sequence_template_max_invoc = (
-    'task_sequence<nnet::zeropad2d_{data_format}_stream<{input_pipe}, {output_pipe}, {config}>,ts_invoc_props> {name};'
+    'task_sequence<nnet::zeropad2d_{data_format}_stream<{input_pipe}, {output_pipe}, {config}>,{maxinvoc}>  {name};'
 )
 
 reshaping_stream_function_template = '{name}.async();'
@@ -101,7 +102,7 @@ class ZeroPaddingTaskSequenceTemplate(TaskSequenceTemplate):
                 'ZeroPadding1D': zeropad1d_task_sequence_template_max_invoc,
                 'ZeroPadding2D': zeropad2d_task_sequence_template_max_invoc,
             }
-            params['maxInvoc'] = max_invoc
+            params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
         
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
@@ -146,7 +147,7 @@ resize_task_sequence_template = (
     'task_sequence<nnet::resize_{algorithm}_stream<{input_pipe}, {output_pipe}, {config}>> {name};'
 )
 resize_task_sequence_template_max_invoc = (
-    'task_sequence<nnet::resize_{algorithm}_stream<{input_pipe}, {output_pipe}, {config}>,ts_invoc_props> {name};'
+    'task_sequence<nnet::resize_{algorithm}_stream<{input_pipe}, {output_pipe}, {config}>,{maxinvoc}>  {name};'
 )
 resize_include_list = ['nnet_utils/nnet_resize.h', 'nnet_utils/nnet_resize_stream.h']
 
@@ -190,7 +191,7 @@ class ResizeTaskSequenceTemplate(TaskSequenceTemplate):
         max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
         if max_invoc is not None:
             self.template = resize_task_sequence_template_max_invoc
-            params['maxInvoc'] = max_invoc
+            params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
 
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
@@ -220,7 +221,7 @@ transpose_config_template = """struct {config_name} : nnet::transpose_config {{
 
 transpose_function_template = 'nnet::transpose<{input_t}, {output_t}, {config}>({input}, {output});'
 transpose_task_sequence_template = 'task_sequence<nnet::transpose_stream<{input_pipe}, {output_pipe}, {config}>> {name};'
-transpose_task_sequence_template_max_invoc = 'task_sequence<nnet::transpose_stream<{input_pipe}, {output_pipe}, {config}>,ts_invoc_props> {name};'
+transpose_task_sequence_template_max_invoc = 'task_sequence<nnet::transpose_stream<{input_pipe}, {output_pipe}, {config}>,{maxinvoc}>  {name};'
 transpose_include_list = ['nnet_utils/nnet_transpose.h', 'nnet_utils/nnet_transpose_stream.h']
 
 
@@ -262,7 +263,7 @@ class TransposeTaskSequenceTemplate(TaskSequenceTemplate):
         max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
         if max_invoc is not None:
             self.template = transpose_task_sequence_template_max_invoc
-            params['maxInvoc'] = max_invoc
+            params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
 
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
@@ -282,7 +283,7 @@ class TransposeTaskSequenceTemplate(TaskSequenceTemplate):
 # Reshape template (only used in streaming)
 reshape_task_sequence_template = 'task_sequence<nnet::repack_stream<{input_pipe}, {output_pipe}, {size}>> {name};'
 reshape_task_sequence_template_max_invoc = (
-    'task_sequence<nnet::repack_stream<{input_pipe}, {output_pipe}, {size}>,ts_invoc_props> {name};'
+    'task_sequence<nnet::repack_stream<{input_pipe}, {output_pipe}, {size}>,{maxinvoc}>  {name};'
 )
 reshape_include_list = ['nnet_utils/nnet_stream.h']
 
@@ -317,7 +318,7 @@ class ReshapeTaskSequenceTemplate(TaskSequenceTemplate):
         max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
         if max_invoc is not None:
             self.template = reshape_task_sequence_template_max_invoc
-            params['maxInvoc'] = max_invoc
+            params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
 
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 

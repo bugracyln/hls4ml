@@ -2,6 +2,7 @@
 These are the stream oneAPI templates for embedding layers. The io_parallel ones are in backends/fpga/passes/embedding.py.
 """
 
+import shutil
 from hls4ml.backends.fpga.fpga_backend import Embedding
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
@@ -29,7 +30,7 @@ embed_include_list = ['nnet_utils/nnet_embed.h', 'nnet_utils/nnet_embed_stream.h
 embed_task_sequence_template = 'task_sequence<nnet::embedding_stream<{input_pipe}, {output_pipe}, {config}>> {name};'
 
 embed_task_sequence_template_max_invoc = (
-    'task_sequence<nnet::embedding_stream<{input_pipe}, {output_pipe}, {config}>,ts_invoc_props> {name};'
+    'task_sequence<nnet::embedding_stream<{input_pipe}, {output_pipe}, {config}>,{maxinvoc}>  {name};'
 )
 
 embed_stream_function_template = '{name}.async();'
@@ -86,7 +87,7 @@ class EmbeddingTaskSequenceTemplate(TaskSequenceTemplate):
         max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
         if max_invoc is not None:
             self.template = embed_task_sequence_template_max_invoc
-            params['maxInvoc'] = max_invoc
+            params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
         
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 

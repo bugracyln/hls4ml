@@ -1,3 +1,4 @@
+import shutil
 from hls4ml.backends.fpga.fpga_layers import PointwiseConv1D, PointwiseConv2D
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
 from hls4ml.backends.oneapi.passes.convolution_templates import (
@@ -29,7 +30,7 @@ pointwise_conv1d_task_sequence_template = (
 
 pointwise_conv1d_task_sequence_template_max_invoc = (
     'task_sequence<nnet::pointwise_conv_1d_{data_format}_stream<{input_pipe},'
-    + '{output_pipe}, {config}>,ts_invoc_props> {name};'
+    + '{output_pipe}, {config}>,{maxinvoc}>  {name};'
 )
 
 pointwise_conv2d_task_sequence_template = (
@@ -38,7 +39,7 @@ pointwise_conv2d_task_sequence_template = (
 
 pointwise_conv2d_task_sequence_template_max_invoc = (
     'task_sequence<nnet::pointwise_conv_2d_{data_format}_stream<{input_pipe},'
-    + '{output_pipe}, {config}>,ts_invoc_props> {name};'
+    + '{output_pipe}, {config}>,{maxinvoc}>  {name};'
 )
 
 pointwise_conv_stream_function_template = '{name}.async();'
@@ -82,7 +83,7 @@ class PointwiseConv1DTaskSequenceTemplate(TaskSequenceTemplate):
         max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
         if max_invoc is not None:
             self.template = pointwise_conv1d_task_sequence_template_max_invoc
-            params['maxInvoc'] = max_invoc
+            params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
         
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
@@ -134,7 +135,7 @@ class PointwiseConv2DTaskSequenceTemplate(TaskSequenceTemplate):
         max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
         if max_invoc is not None:
             self.template = pointwise_conv2d_task_sequence_template_max_invoc
-            params['maxInvoc'] = max_invoc
+            params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
 
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 

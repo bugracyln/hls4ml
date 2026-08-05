@@ -198,31 +198,38 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void conv_1d_cl_st
 #ifdef AUTOREG
     while (true){
 
-    // Reset for each image
-    int pX = 0;
-    int sX = 0;
-
-    // Input image left-side padding
-    PaddingLeftWidth:
-        for (int col = 0; col < CONFIG_T::pad_left; col++) {
-            compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(padds_packet, line_buffer, kernel_window,
-                                                                                    CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
-        }
-
-    // Read input image
-    ReadInputWidth:
-        for (int col = 0; col < CONFIG_T::in_width; col++) {
+        if constexpr (CONFIG_T::per_item_stream){ // For per-vector stream (used as a dense-like layer)
             compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
                 data_pipe::read(), line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
-            
             if(exit_task) return;
         }
+        else{ //For autoregressive image stream
+            // Reset for each image
+            int pX = 0;
+            int sX = 0;
 
-    // Input image right-side padding
-    PaddingRightWidth:
-        for (int col = 0; col < CONFIG_T::pad_right; col++) {
-            compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(padds_packet, line_buffer, kernel_window,
-                                                                                    CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
+            // Input image left-side padding
+            PaddingLeftWidth:
+                for (int col = 0; col < CONFIG_T::pad_left; col++) {
+                    compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(padds_packet, line_buffer, kernel_window,
+                                                                                            CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
+                }
+
+            // Read input image
+            ReadInputWidth:
+                for (int col = 0; col < CONFIG_T::in_width; col++) {
+                    compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
+                        data_pipe::read(), line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
+                    
+                    if(exit_task) return;
+                }
+
+            // Input image right-side padding
+            PaddingRightWidth:
+                for (int col = 0; col < CONFIG_T::pad_right; col++) {
+                    compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(padds_packet, line_buffer, kernel_window,
+                                                                                            CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
+                }
         }
     }
 #else

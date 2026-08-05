@@ -1,3 +1,4 @@
+import shutil
 from math import ceil
 
 from hls4ml.backends.backend import get_backend
@@ -58,7 +59,7 @@ einsum_streamed_function_template = (
 )
 
 einsum_stream_function_template_max_invoc = (
-    'task_sequence<nnet::causal_einsum<{input0_pipe}, {input1_pipe}, {output_pipe}, {config}>,ts_invoc_props> {name};'
+    'task_sequence<nnet::causal_einsum<{input0_pipe}, {input1_pipe}, {output_pipe}, {config}>,{maxinvoc}>  {name};'
 )
 
 einsum_include_list = ['nnet_utils/nnet_einsum.h', 'nnet_utils/nnet_causal_einsum.h']
@@ -217,7 +218,7 @@ class EinsumStreamTaskSequenceTemplate(TaskSequenceTemplate):
         max_invoc = node.model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', None)
         if max_invoc is not None:
             self.template = einsum_stream_function_template_max_invoc
-            params['maxInvoc'] = max_invoc
+            params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
 
         return self.template.format(**params)
 
