@@ -57,6 +57,7 @@ DataPropagation:
             return;
         }
         auto data_pack = data_pack_pipe.data;
+        bool fb = data_pack_pipe.feedback;
 #else
     for (int i_in = 0; i_in < CONFIG_T::n_timesteps * CONFIG_T::n_in / datasize; i_in++) {
         auto data_pack = data_pipe::read();
@@ -81,6 +82,7 @@ DataPropagation:
         #ifdef AUTOREG
             res_pack_pipe.data = res_pack;
             res_pack_pipe.exit_task = false;
+            res_pack_pipe.feedback = data_pack_pipe.feedback;
             res_pipe::write(res_pack_pipe);
         #else
             res_pipe::write(res_pack);
@@ -102,6 +104,7 @@ DataPropagation:
     #ifdef AUTOREG
         res_pack_pipe.data = res_pack;
         res_pack_pipe.exit_task = false;
+        res_pack_pipe.feedback = false;
         res_pipe::write(res_pack_pipe);
     #else
         res_pipe::write(res_pack);

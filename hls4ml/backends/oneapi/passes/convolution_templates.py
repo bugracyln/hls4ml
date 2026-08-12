@@ -21,6 +21,7 @@ conv_mult_config_template = """struct config{index}_mult : nnet::dense_config {{
     static const unsigned multiplier_factor = MIN(n_in, reuse_factor);
     static const unsigned multiplier_limit = DIV_ROUNDUP(n_in*n_out, multiplier_factor);
     static const unsigned multiplier_scale = multiplier_limit/n_out;
+    static constexpr unsigned num_banks = DIV_ROUNDUP(n_in, reuse_factor);
 
     typedef {accum_t.name} accum_t;
     typedef {bias_t.name} bias_t;

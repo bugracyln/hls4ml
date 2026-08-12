@@ -132,6 +132,7 @@ void compute_output_buffer_2d(
     using res_T = typename out_pipe_T::value_type;
 
     [[intel::fpga_register]] out_pipe_T out_pipe;
+    out_pipe.feedback = in_elem.feedback;
 
     if(in_elem.exit_task){
         out_pipe.exit_task = true;

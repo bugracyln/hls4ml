@@ -29,6 +29,7 @@ LinearActLoop:
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
     #ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
         if (in_data.exit_task){
             out_data.exit_task = true;
             res_pipe::write(out_data);
@@ -67,6 +68,7 @@ ReLUActLoop:
         typename ExtractPipeType<res_pipe>::value_type out_data;
     
     #ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
         if (in_data.exit_task){
             out_data.exit_task = true;
             res_pipe::write(out_data);
@@ -121,6 +123,7 @@ LeakyReLUActLoop:
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
     #ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
         if (in_data.exit_task){
             out_data.exit_task = true;
             res_pipe::write(out_data);
@@ -166,6 +169,7 @@ ThresholdedReLUActLoop:
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
         #ifdef AUTOREG
+            out_data.feedback = in_data.feedback;
             if (in_data.exit_task){
                 out_data.exit_task = true;
                 res_pipe::write(out_data);
@@ -224,6 +228,7 @@ EluActLoop:
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
     #ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
         if (in_data.exit_task){
             out_data.exit_task = true;
             res_pipe::write(out_data);
@@ -284,6 +289,7 @@ SeluActLoop:
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
     #ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
         if (in_data.exit_task){
             out_data.exit_task = true;
             res_pipe::write(out_data);
@@ -358,6 +364,7 @@ PReLUActLoop:
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
     #ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
         if (in_data.exit_task){
             out_data.exit_task = true;
             res_pipe::write(out_data);
@@ -410,6 +417,7 @@ SoftplusActLoop:
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
     #ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
         if (in_data.exit_task){
             out_data.exit_task = true;
             res_pipe::write(out_data);
@@ -472,6 +480,7 @@ SoftsignActLoop:
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
     #ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
         if (in_data.exit_task){
             out_data.exit_task = true;
             res_pipe::write(out_data);
@@ -516,7 +525,6 @@ SoftsignActLoop:
             }
         #endif
         }
-
         res_pipe::write(out_data);
     }
 }
@@ -557,6 +565,7 @@ SoftmaxArrayLoop:
 
         auto in_data_pack = data_pipe::read();
         auto in_pack = in_data_pack.data;
+        out_pack.feedback = in_data_pack.feedback;
 
         if (in_data_pack.exit_task) {
             out_pack.exit_task = true;
@@ -674,6 +683,7 @@ SoftmaxExpLoop:
 
         auto in_data_pack = data_pipe::read();
         auto in_pack = in_data_pack.data;
+        out_pack.feedback = in_data_pack.feedback;
 
         if (in_data_pack.exit_task) {
             out_pack.exit_task = true;
@@ -752,6 +762,7 @@ SoftmaxInitLoop:
         typename ExtractPipeType<res_pipe>::value_type out_pack;
 
     #ifdef AUTOREG
+        out_pack.feedback = in_pack.feedback;
         if (in_pack.exit_task){
             out_pack.exit_task = true;
             res_pipe::write(out_pack);
@@ -833,6 +844,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void softmax_argma
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
     #ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
         if (in_data.exit_task){
             out_data.exit_task = true;
             res_pipe::write(out_data);
@@ -929,7 +941,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> inline void softma
 
     #ifdef AUTOREG
         [[intel::fpga_register]] data_pipe_T buffer_in_pipe = data_pipe::read();
-
+        out_pack_pipe.feedback = buffer_in_pipe.feedback;
         if (buffer_in_pipe.exit_task){
             out_pack_pipe.exit_task = true;
             res_pipe::write(out_pack_pipe);
@@ -999,7 +1011,7 @@ TanHActLoop:
     while (true){
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
-
+        out_data_pipe.feedback = in_data_pipe.feedback;
         if(in_data_pipe.exit_task){
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
@@ -1074,7 +1086,7 @@ SigmoidActLoop:
     while (true){
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
-
+        out_data_pipe.feedback = in_data_pipe.feedback;
         if(in_data_pipe.exit_task){
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
@@ -1147,7 +1159,7 @@ HardSigmoidActLoop:
     while (true){
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
-
+        out_data_pipe.feedback = in_data_pipe.feedback;
         if(in_data_pipe.exit_task){
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
@@ -1206,7 +1218,7 @@ HardSigmoidActLoop:
     while (true){
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
-
+        out_data_pipe.feedback = in_data_pipe.feedback;
         if(in_data_pipe.exit_task){
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
@@ -1266,7 +1278,7 @@ BinaryTanHActLoop:
     while (true){
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
-
+        out_data_pipe.feedback = in_data_pipe.feedback;
         if(in_data_pipe.exit_task){
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
@@ -1324,7 +1336,7 @@ TernaryTanHActLoop:
     while (true){
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
-
+        out_data_pipe.feedback = in_data_pipe.feedback;
         if(in_data_pipe.exit_task){
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);

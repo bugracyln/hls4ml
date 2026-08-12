@@ -26,6 +26,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void dense_resourc
     [[intel::fpga_register]] res_pipe_T out_pipe;
     while (true){
     [[intel::fpga_register]] data_pipe_T data_pack = data_pipe::read();
+    out_pipe.feedback = data_pack.feedback;
     if (data_pack.exit_task) {
         out_pipe.exit_task = true;
         res_pipe::write(out_pipe);

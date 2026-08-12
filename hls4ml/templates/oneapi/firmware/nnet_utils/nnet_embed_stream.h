@@ -29,37 +29,43 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
     #ifdef AUTOREG
         while (true) {
             auto in_data_pipe = data_pipe::read();
-            if(in_data_pipe.exit_task){
-                out_data_pipe.exit_task = true;
-                res_pipe::write(out_data_pipe);
-                return;
-            }
-            auto in_data = in_data_pipe.data;
-    #else
-        [[intel::initiation_interval(CONFIG_T::reuse_factor)]] for (int j = 0; j < loopnum; j++) {
-            auto in_data = data_pipe::read();
-    #endif
-            res_arr_T res_pack;
+            bool exit_task = in_data_pipe.exit_task;
+            bool fb = in_data_pipe.feedback;
+                //if(in_data_pipe.exit_task){
+                    //out_data_pipe.exit_task = true;
+                //    res_pipe::write(res_pipe_T{{},true});//out_data_pipe);
+                //    return;
+                //}
+            res_arr_T res_pack{};
 
-        DenseEmbedding2:
-            #pragma unroll CONFIG_T::num_banks
-            for (int i = 0; i < CONFIG_T::n_out; i++) {
-                if constexpr (CONFIG_T::embed_pos) 
-                    res_pack[i] = CONFIG_T::embeddings[(pos_ct * CONFIG_T::n_out + i)];
-                else
-                    res_pack[i] = CONFIG_T::embeddings[(in_data[0] * CONFIG_T::n_out + i).to_uint()];
-            }
-
-            if constexpr (CONFIG_T::embed_pos) {
-                if (++pos_ct == CONFIG_T::vocab_size) pos_ct = 0;
-            }
-
-        
-        #ifdef AUTOREG
-            out_data_pipe.data = res_pack;
-            out_data_pipe.exit_task = false;
-            res_pipe::write(out_data_pipe);
+            if(!exit_task){
+                    auto in_data = in_data_pipe.data;
         #else
+            [[intel::initiation_interval(CONFIG_T::reuse_factor)]] for (int j = 0; j < loopnum; j++) {
+                auto in_data = data_pipe::read();
+        #endif
+            	
+
+       	 DenseEmbedding2:
+                #pragma unroll CONFIG_T::num_banks
+            	for (int i = 0; i < CONFIG_T::n_out; i++) {
+                	if constexpr (CONFIG_T::embed_pos) 
+                    	res_pack[i] = CONFIG_T::embeddings[(pos_ct * CONFIG_T::n_out + i)];
+                	else
+                    	res_pack[i] = CONFIG_T::embeddings[(in_data[0] * CONFIG_T::n_out + i).to_uint()];
+            	}
+
+            	if constexpr (CONFIG_T::embed_pos) {
+                	if (++pos_ct == CONFIG_T::vocab_size) pos_ct = 0;
+            	}
+
+            }
+        #ifdef AUTOREG
+            //out_data_pipe.data = res_pack;
+            //out_data_pipe.exit_task = false;
+            res_pipe::write(res_pipe_T{res_pack,exit_task,fb});//out_data_pipe);
+            if (exit_task) return;
+	#else
             res_pipe::write(res_pack);
         #endif
                     
@@ -70,9 +76,10 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
     #ifdef AUTOREG
         while (true) {
             auto in_data_pipe = data_pipe::read();
+            bool fb = in_data_pipe.feedback;
             if(in_data_pipe.exit_task){
-                out_data_pipe.exit_task = true;
-                res_pipe::write(out_data_pipe);
+                //out_data_pipe.exit_task = true;
+                res_pipe::write(res_pipe_T{{},true,fb});//out_data_pipe);
                 return;
             }
             auto in_data = in_data_pipe.data;
@@ -99,9 +106,9 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
                 }
 
             #ifdef AUTOREG
-                out_data_pipe.data = res_pack;
-                out_data_pipe.exit_task = false;
-                res_pipe::write(out_data_pipe);
+                //out_data_pipe.data = res_pack;
+                //out_data_pipe.exit_task = false;
+                res_pipe::write(res_pipe_T{res_pack,false,fb});//out_data_pipe);
             #else
                 res_pipe::write(res_pack);
             #endif

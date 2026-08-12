@@ -169,6 +169,7 @@ class OneAPIWriter(Writer):
                                         pipe_var_type=layer_pipe_var_unit_data_packet_type,
                                     )
 
+                                    '''
                                     if inp_pos_stream:
                                         newline +=  pipe_template.format(
                                             pipe_name='SW_POS_' + layer_pipe_name,
@@ -176,6 +177,7 @@ class OneAPIWriter(Writer):
                                             pipe_depth=layer_pipe_depth,
                                             pipe_var_type=layer_pipe_var_unit_data_packet_type, # TODO - DETERMINE SEPERATE TYPE FOR POS?
                                         )
+                                    '''
 
                                     newline +=  pipe_template.format(
                                         pipe_name='FB_' + layer_pipe_name,
@@ -188,7 +190,7 @@ class OneAPIWriter(Writer):
                                         pipe_name= f'SwitchControl{idx}',
                                         pipe_id= f'SwitchControl{idx}ID',
                                         pipe_depth=layer_pipe_depth,
-                                        pipe_var_type='nnet::SignalPack',
+                                        pipe_var_type='nnet::PipeSignal',
                                     )
 
                                 elif layer_out_var.name in opt_names:
@@ -685,21 +687,35 @@ class OneAPIWriter(Writer):
                     out_pipe_names = ','.join([out.pipe_name for out in model_outputs])
                     out_sizes = ','.join([str(min((OUT_BUFFER_CAP if autoreg_model else np.prod(out.shape)),OUT_BUFFER_CAP)) for out in model_outputs])
 
-                    for idx, inp in enumerate(model_inputs):
-                        num = idx if idx >= 1 else ''
-                        newline += (
-                            indent + f'using {inp.name}_pair = nnet::SrcPipePair<{inp.name}_item_t, {inp.pipe_name}>;\n'
-                        )
+                    if len(model_inputs) > 1:
+                        for idx, inp in enumerate(model_inputs):
+                            num = idx if idx >= 1 else ''
+                            newline += (
+                                indent + f'using {inp.name}_pair = nnet::SrcPipePair<{inp.name}_item_t, {inp.pipe_name}>;\n'
+                            )
 
-                    pairs = ','.join([f'{inp.name}_pair' for idx, inp in enumerate(model_inputs)])
-                    newline += (
-                        indent
-                        + f'q.single_task(nnet::DMA_convert_data<{pairs}>'
-                        + '{'
-                        + inp_names
-                        + f', {inp.size_cpp()}'
-                        + '});\n'
-                    )
+                        pairs = ','.join([f'{inp.name}_pair' for idx, inp in enumerate(model_inputs)])
+                        if len(model_inputs) > 1:
+                            newline += (
+                                indent
+                                + f'q.single_task(nnet::DMA_convert_data<{pairs}>'
+                                + '{'
+                                + inp_names
+                                + f', {inp.size_cpp()}'
+                                + '});\n'
+                            )
+                    else:
+                        # Assumes size == 1, will adjust this as an alternative "kernel-per-input" model
+                        for inp in model_inputs:
+                            newline += (
+                                indent
+                                + f'q.single_task(nnet::DMA_convert_data_single<{inp.name}_item_t, {inp.pipe_name}>'
+                                + '{'
+                                + inp_names
+                                + f', {inp.size_cpp()}'
+                                + '});\n'
+                            )
+
                     newline += indent + 'q.single_task(Myproject{});\n'
                     newline += (
                         indent

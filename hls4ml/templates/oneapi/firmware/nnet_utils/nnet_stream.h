@@ -31,6 +31,9 @@ CloneLoop:
         data_T in_data = data_pipe::read();
         res1_T out_data1;
         res2_T out_data2;
+        bool fb = in_data.feedback;
+        out_data1.feedback = fb;
+        out_data2.feedback = fb;
 
     #ifdef AUTOREG
         if (in_data.exit_task){
@@ -80,6 +83,10 @@ CloneLoop:
         res1_T out_data1;
         res2_T out_data2;
         res3_T out_data3;
+        bool fb = in_data.feedback;
+        out_data1.feedback = fb;
+        out_data2.feedback = fb;
+        out_data3.feedback = fb;
 
     #ifdef AUTOREG
         if (in_data.exit_task){
@@ -136,6 +143,12 @@ CloneLoop:
         res2_T out_data2;
         res3_T out_data3;
         res4_T out_data4;
+        bool fb = in_data.feedback;
+        out_data1.feedback = fb;
+        out_data2.feedback = fb;
+        out_data3.feedback = fb;
+        out_data4.feedback = fb;
+        
 
     #ifdef AUTOREG
         if (in_data.exit_task){
@@ -200,6 +213,13 @@ CloneLoop:
         res3_T out_data3;
         res4_T out_data4;
         res5_T out_data5;
+        bool fb = in_data.feedback;
+        out_data1.feedback = fb;
+        out_data2.feedback = fb;
+        out_data3.feedback = fb;
+        out_data4.feedback = fb;
+        out_data5.feedback = fb;
+        
 
     #ifdef AUTOREG
         if (in_data.exit_task){
@@ -272,6 +292,14 @@ CloneLoop:
         res4_T out_data4;
         res5_T out_data5;
         res6_T out_data6;
+        bool fb = in_data.feedback;
+        out_data1.feedback = fb;
+        out_data2.feedback = fb;
+        out_data3.feedback = fb;
+        out_data4.feedback = fb;
+        out_data5.feedback = fb;
+        out_data6.feedback = fb;
+        
 
     #ifdef AUTOREG
         if (in_data.exit_task){
@@ -351,6 +379,15 @@ CloneLoop:
         res5_T out_data5;
         res6_T out_data6;
         res7_T out_data7;
+        bool fb = in_data.feedback;
+        out_data1.feedback = fb;
+        out_data2.feedback = fb;
+        out_data3.feedback = fb;
+        out_data4.feedback = fb;
+        out_data5.feedback = fb;
+        out_data6.feedback = fb;
+        out_data7.feedback = fb;
+    
 
     #ifdef AUTOREG
         if (in_data.exit_task){
@@ -425,6 +462,7 @@ template <class data_pipe, class res_pipe, int N> void repack_stream() {
             [[intel::fpga_memory]] res_T out_data;
 
         #ifdef AUTOREG  
+            out_data.feedback = in_data.feedback;
             if (in_data.exit_task){
                 out_data.exit_task = true;
                 res_pipe::write(out_data);
@@ -454,6 +492,7 @@ template <class data_pipe, class res_pipe, int N> void repack_stream() {
             [[intel::fpga_memory]] res_T out_data;
 
         #ifdef AUTOREG  
+            out_data.feedback = in_data.feedback;
             if (in_data.exit_task){
                 out_data.exit_task = true;
                 res_pipe::write(out_data);
@@ -489,6 +528,7 @@ template <class data_pipe, class res_pipe, int N> void repack_stream() {
             [[intel::fpga_memory]] auto in_data = data_pipe::read();
 
         #ifdef AUTOREG  
+                out_data.feedback = in_data.feedback;
             if (in_data.exit_task){
                 out_data.exit_task = true;
                 res_pipe::write(out_data);

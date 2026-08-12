@@ -70,6 +70,7 @@ template<class data_T> struct DataPacket {
     using data_type = data_T;
     data_T data = {}; 
     bool exit_task = false;
+    bool feedback = false;
 };
 
 } // namespace nnet

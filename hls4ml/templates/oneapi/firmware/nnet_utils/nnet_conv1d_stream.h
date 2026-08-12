@@ -105,11 +105,12 @@ void compute_output_buffer_1d(
     using res_T = typename out_pipe_T::data_type;
 
     [[intel::fpga_register]] out_pipe_T out_pipe;
+    bool fb = in_elem.feedback;
 
     if(in_elem.exit_task){
-        out_pipe.exit_task = true;
+        //out_pipe.exit_task = true;
         exit_task = true;
-        res_pipe::write(out_pipe);
+        res_pipe::write(out_pipe_T{{},true,false});//out_pipe);
         return;
     }
 #else
@@ -146,10 +147,10 @@ void compute_output_buffer_1d(
             res_pack[channel] = res_out[channel];
         }
     #ifdef AUTOREG
-        out_pipe.data = res_pack;
-        out_pipe.exit_task = false;
+        //out_pipe.data = res_pack;
+        //out_pipe.exit_task = false;
         exit_task = false;
-        res_pipe::write(out_pipe);
+        res_pipe::write({res_pack,false,fb});//out_pipe);
     #else 
         res_pipe::write(res_pack);
     #endif

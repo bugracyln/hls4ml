@@ -39,7 +39,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> inline void fill_d
         res_pipe::write(res_part);
         return;
     }
-
+    res_part.feedback = data_part.feedback;
 #endif
 
     #pragma unroll

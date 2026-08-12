@@ -41,7 +41,7 @@ BatchNormLoop:
         auto in_data = data_pipe::read();
         
         res_pipe_T out_data;
-
+        out_data.feedback = in_data.feedback;
         if(in_data.exit_task){
             out_data.exit_task = true;
             res_pipe::write(out_data);
@@ -115,6 +115,7 @@ BinaryNormLoop:
     while (true) {
         auto in_data = data_pipe::read();
         res_pipe_T out_pipe;
+        out_pipe.feedback = in_data.feedback;
         if (in_data.exit_task){
             out_pipe.exit_task = true;
             res_pipe::write(out_pipe);
@@ -179,6 +180,7 @@ TernaryNormLoop:
     while (true) {
         auto in_data = data_pipe::read();
         res_pipe_T out_pipe;
+        out_pipe.feedback = in_data.feedback;
         if (in_data.exit_task){
             out_pipe.exit_task = true;
             res_pipe::write(out_pipe);

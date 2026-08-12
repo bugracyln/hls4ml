@@ -96,6 +96,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
     while(true){
         if (exit_task){
             dense_out_pipe.exit_task = true;
+            dense_out_pipe.feedback = false;
             res_pipe::write(dense_out_pipe);
             return;
         }
@@ -111,6 +112,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
                     dense_in_pipe = data_pipe::read(); // 1xC read
                     if (dense_in_pipe.exit_task) {
                         dense_out_pipe.exit_task = true;
+                        dense_out_pipe.feedback = dense_in_pipe.feedback;
                         res_pipe::write(dense_out_pipe);
                         return;
                     }
@@ -128,6 +130,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
                         if(dense_in_pipe.exit_task) {
                             exit_task = true;
                             dense_out_pipe.exit_task = true;
+                            dense_out_pipe.feedback = dense_in_pipe.feedback;
                             res_pipe::write(dense_out_pipe);
                             return;
                         }
@@ -152,6 +155,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
                     #ifdef AUTOREG
                         dense_out_pipe.data = dense_out;
                         dense_out_pipe.exit_task = false;
+                        dense_out_pipe.feedback = dense_in_pipe.feedback;
                         res_pipe::write(dense_out_pipe);
                     #else    
                         res_pipe::write(dense_out);
@@ -162,6 +166,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_
                     #ifdef AUTOREG
                         dense_out_pipe.data = dense_out;
                         dense_out_pipe.exit_task = false;
+                        dense_out_pipe.feedback = dense_in_pipe.feedback;
                         res_pipe::write(dense_out_pipe);
                     #else    
                         res_pipe::write(dense_out);

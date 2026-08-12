@@ -66,7 +66,11 @@ bool
 #else
 void 
 #endif
-read_causal_pipe(data_buf_T buff, unsigned i, unsigned *write_ptrs, unsigned *ctx_cts, data_T *causal_buffer) {
+read_causal_pipe(data_buf_T buff, unsigned i, unsigned *write_ptrs, unsigned *ctx_cts, data_T *causal_buffer 
+    #ifdef AUTOREG
+    , bool& fb
+    #endif
+) {
 
 #ifdef AUTOREG
     constexpr unsigned CAUSAL_PIPE_SIZE = std::tuple_size<typename data_buf_T::data_type>::value;
@@ -118,6 +122,7 @@ read_causal_pipe(data_buf_T buff, unsigned i, unsigned *write_ptrs, unsigned *ct
     write_ptrs[i] = (write_ptrs[i] + 1 >= CTX) ? (write_ptrs[i] + 1 - CTX) : (write_ptrs[i] + 1);
     
     #ifdef AUTOREG
+    fb = buff.feedback;
     return buff.exit_task;
     #endif
 }
@@ -150,7 +155,11 @@ bool
 #else
 void 
 #endif
-read_stateless_pipe(data_arr_T buff, data_T data_vect_buffer[(CONFIG_T::contract_dim ? CONFIG_T::n_free0 : CONFIG_T::n_contract)]) {
+read_stateless_pipe(data_arr_T buff, data_T data_vect_buffer[(CONFIG_T::contract_dim ? CONFIG_T::n_free0 : CONFIG_T::n_contract)] 
+    #ifdef AUTOREG
+    , bool& fb
+    #endif
+) {
 
     constexpr unsigned C = CONFIG_T::n_contract;
     constexpr unsigned L0 = CONFIG_T::n_free0;
@@ -177,6 +186,7 @@ read_stateless_pipe(data_arr_T buff, data_T data_vect_buffer[(CONFIG_T::contract
         }
     }
 #ifdef AUTOREG
+    fb = buff.feedback;
     return buff.exit_task;
 #endif
 }
@@ -237,6 +247,7 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
 
 #ifdef AUTOREG
     while (true) {
+        bool fb = 0;
 #else
     for (unsigned loop = 0; loop < CTX; loop++) {
 #endif
@@ -250,7 +261,7 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
                 for (unsigned l0 = 0; l0 < L0; l0++) {
 
                 #ifdef AUTOREG
-                    if (read_stateless_pipe<data0_T, data0_pipe_T, CONFIG_T>(data0_pipe::read(),data_vect_buffer)){
+                    if (read_stateless_pipe<data0_T, data0_pipe_T, CONFIG_T>(data0_pipe::read(),data_vect_buffer,fb)){
                         // Since both pipes work simultaneously, drain both before exiting.
                         data1_pipe::read();
                         res_buffer.exit_task = true;
@@ -264,7 +275,7 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
 
                     if (l0 == 0){
                     #ifdef AUTOREG
-                        if (read_causal_pipe<data1_T, data1_pipe_T, CONFIG_T>(data1_pipe::read(), i, write_ptrs, ctx_cts, causal_buff)){
+                        if (read_causal_pipe<data1_T, data1_pipe_T, CONFIG_T>(data1_pipe::read(), i, write_ptrs, ctx_cts, causal_buff, fb)){
                             res_buffer.exit_task = true;
                             res_pipe::write(res_buffer);
                             clean_brams();
@@ -314,6 +325,7 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
                     }
                 #ifdef AUTOREG
                     res_buffer.exit_task = false;
+                    res_buffer.feedback = fb;
                 #endif
                     res_pipe::write(res_buffer);
                 }
@@ -321,7 +333,7 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
             } else { // CONTRACT ALONG THE CONTEXT - In this mode L0 == CTX and C is irrelevant
 
             #ifdef AUTOREG
-                if (read_stateless_pipe<data0_T, data0_pipe_T, CONFIG_T>(data0_pipe::read(), data_vect_buffer)){
+                if (read_stateless_pipe<data0_T, data0_pipe_T, CONFIG_T>(data0_pipe::read(), data_vect_buffer, fb)){
                     // Empty the other pipe before exiting
                     data1_pipe::read();
                     res_buffer.exit_task = true;
@@ -335,6 +347,7 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
                 
             #ifdef AUTOREG
                 data1_pipe_T causal_pipe = data1_pipe::read();
+                if (causal_pipe.feedback) fb = true;
                 if (causal_pipe.exit_task){
                     res_buffer.exit_task = true;
                     res_pipe::write(res_buffer);
@@ -373,6 +386,7 @@ template <class data0_pipe, class data1_pipe, class res_pipe, typename CONFIG_T>
                 }
                 #ifdef AUTOREG
                     res_buffer.exit_task = false;
+                    res_buffer.feedback = fb;
                 #endif
                 res_pipe::write(res_buffer);
                 // Pointers are updated externally so this func does not touch ctx_cts or write_ptrs

@@ -29,6 +29,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void transpose_str
         for (int i = 0; i < CONFIG_T::N / data_size; i++) {
         #ifdef AUTOREG
             [[intel::fpga_register]] data_pipe_T in_data_pipe = data_pipe::read();
+            bool fb = in_data_pipe.feedback;
             if (in_data_pipe.exit_task){
                 out_data_pipe.exit_task = true;
                 res_pipe::write(out_data_pipe);
@@ -56,6 +57,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void transpose_str
         #ifdef AUTOREG
             out_data_pipe.data = out_data;
             out_data_pipe.exit_task = false;
+            out_data_pipe.feedback = fb;
             res_pipe::write(out_data_pipe);
         #else
             res_pipe::write(out_data);

@@ -41,6 +41,8 @@ void compute_pool_buffer_1d(const data_arr_T &in_elem,
         using data_T = typename data_arr_T::data_type;
         using res_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
         [[intel::fpga_register]]  typename ExtractPipeType<res_pipe>::value_type res_pack_pipe;
+        
+        bool fb = in_elem.feedback;
 
         if (in_elem.exit_task){
             exit_task = true;
@@ -93,6 +95,7 @@ void compute_pool_buffer_1d(const data_arr_T &in_elem,
     #ifdef AUTOREG
         res_pack_pipe.data = res_pack;
         res_pack_pipe.exit_task = false;
+        res_pack_pipe.feedback = fb;
         res_pipe::write(res_pack_pipe);
     #else
         res_pipe::write(res_pack);
@@ -191,6 +194,8 @@ void compute_pool_buffer_2d(const data_arr_T &in_elem,
         using res_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
         [[intel::fpga_register]]  typename ExtractPipeType<res_pipe>::value_type res_pack_pipe;
 
+        bool fb = in_elem.feedback;
+
         if (in_elem.exit_task){
             exit_task = true;
             res_pack_pipe.exit_task = true;
@@ -244,6 +249,7 @@ void compute_pool_buffer_2d(const data_arr_T &in_elem,
     #ifdef AUTOREG
         res_pack_pipe.data = res_pack;
         res_pack_pipe.exit_task = false;
+        res_pack_pipe.feedback = fb;
         res_pipe::write(res_pack_pipe);
     #else
         res_pipe::write(res_pack);
@@ -379,6 +385,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
         for (int i = 0; i < CONFIG_T::n_in; i++) {
         #ifdef AUTOREG
             data_pipe_T in_data_pipe = data_pipe::read();
+            out_data_pipe.feedback = in_data_pipe.feedback;
             if (in_data_pipe.exit_task){
                 out_data_pipe.exit_task = true; 
                 res_pipe::write(out_data_pipe);
@@ -406,6 +413,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
     #ifdef AUTOREG
         out_data_pipe.data = res_pack;
         out_data_pipe.exit_task = false;
+        out_data_pipe.feedback = fb;
         res_pipe::write(out_data_pipe);
     #else
         res_pipe::write(res_pack);
@@ -448,6 +456,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
             for (int j = 0; j < CONFIG_T::in_width; j++) {
             #ifdef AUTOREG
                 data_pipe_T in_data_pipe = data_pipe::read();
+                out_data_pipe.feedback = in_data_pipe.feedback;
                 if (in_data_pipe.exit_task){
                     out_data_pipe.exit_task = true; 
                     res_pipe::write(out_data_pipe);
@@ -477,6 +486,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
     #ifdef AUTOREG
         out_data_pipe.data = res_pack;
         out_data_pipe.exit_task = false;
+        out_data_pipe.feedback = fb;
         res_pipe::write(out_data_pipe);
     #else
         res_pipe::write(res_pack);
