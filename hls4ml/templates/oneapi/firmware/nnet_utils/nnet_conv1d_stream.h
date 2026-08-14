@@ -103,14 +103,11 @@ void compute_output_buffer_1d(
     using data_T = typename data_in_T::data_type;
     using out_pipe_T = typename ExtractPipeType<res_pipe>::value_type;
     using res_T = typename out_pipe_T::data_type;
-
-    [[intel::fpga_register]] out_pipe_T out_pipe;
     bool fb = in_elem.feedback;
 
     if(in_elem.exit_task){
-        //out_pipe.exit_task = true;
         exit_task = true;
-        res_pipe::write(out_pipe_T{{},true,false});//out_pipe);
+        res_pipe::write(out_pipe_T{{},true,false});
         return;
     }
 #else
@@ -139,20 +136,22 @@ void compute_output_buffer_1d(
         [[intel::fpga_register]] res_T res_out;
         dense_resource<data_window_T, res_T, typename CONFIG_T::mult_config>(kernel_window, res_out, weights, biases);
 
-        // Write result to output stream
-        [[intel::fpga_register]] res_T res_pack;
+    // Write result to output stream
+    // TODO - CAST LOOP IS USELESS FOR THE TIME BEING ASK IF THIS HAD ANOTHER PURPOSE
+    /*   [[intel::fpga_register]] res_T res_pack;
+    
+    
     CastLoop:
         #pragma unroll
         for (int channel = 0; channel < CONFIG_T::n_filt; channel++) {
             res_pack[channel] = res_out[channel];
         }
+    */
     #ifdef AUTOREG
-        //out_pipe.data = res_pack;
-        //out_pipe.exit_task = false;
         exit_task = false;
-        res_pipe::write({res_pack,false,fb});//out_pipe);
+        res_pipe::write({res_out,false,fb});
     #else 
-        res_pipe::write(res_pack);
+        res_pipe::write(res_out);
     #endif
     }
 

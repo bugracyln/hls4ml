@@ -105,12 +105,20 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    volatile std::size_t *tx_counter = sycl::malloc_shared<std::size_t>(1, q);
+    if (tx_counter == nullptr) {
+        std::cerr << "ERROR: host allocation failed for output\n";
+        fout.close();
+        return 1;
+    }
+
     std::cout << "INFO: Using a pre-determined input sequence, performing " << num_iterations << " independent tests."
               << std::endl;
 
     std::chrono::high_resolution_clock::time_point first_token_time;
     double average_ts = 0;
     double average_ttft = 0;
+    double average_tx = 0;
     double first_ts = 0;
     double first_ttft = 0;
 
@@ -140,10 +148,12 @@ int main(int argc, char **argv) {
         // Analyse and record data on the host side
         double ttft = std::chrono::duration<double, std::milli>(first_token_time - start).count();
         double total_time = std::chrono::duration<double>(end - start).count();
-        double num_tokens = 48; // TODO - THIS IS CURRENTLY WRONG, PASS A COUNTER TO ONE OF THE KERNELS TO COUNT UNTIL END_TASK #########################################################################################################
+        double num_tokens = *tx_counter;
         double ts = num_tokens / total_time;
         average_ts = iteration > 0 ? ((average_ts * iteration + ts) / (iteration + 1)) : ts;
         average_ttft = iteration > 0 ? ((average_ttft * iteration + ttft) / (iteration + 1)) : ttft;
+        average_tx = iteration > 0 ? ((average_tx * iteration + num_tokens) / (iteration + 1)) : num_tokens;
+        std::cout << "Tx this run: " << num_tokens << std::endl; 
         std::cout << "Current TTFT (ms): " << ttft << std::endl;
         std::cout << "Current Tokens/s: " << ts << std::endl;
 
@@ -156,6 +166,7 @@ int main(int argc, char **argv) {
     }
 
     std::cout << num_iterations << " iterations were performed." << std::endl;
+    std::cout << "Average Tx was: " << average_tx << std::endl;
     std::cout << "Average TTFT (ms) was: " << average_ttft << std::endl;
     std::cout << "Average Tokens/s was: " << average_ts << std::endl;
 

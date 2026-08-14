@@ -10,7 +10,6 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
     using data_arr_T = typename data_pipe_T::data_type;
     using res_pipe_T = typename ExtractPipeType<res_pipe>::value_type;
     using res_arr_T = typename res_pipe_T::data_type;
-    res_pipe_T out_data_pipe;
 #else
     using data_arr_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
@@ -31,11 +30,6 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
             auto in_data_pipe = data_pipe::read();
             bool exit_task = in_data_pipe.exit_task;
             bool fb = in_data_pipe.feedback;
-                //if(in_data_pipe.exit_task){
-                    //out_data_pipe.exit_task = true;
-                //    res_pipe::write(res_pipe_T{{},true});//out_data_pipe);
-                //    return;
-                //}
             res_arr_T res_pack{};
 
             if(!exit_task){
@@ -61,11 +55,9 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
 
             }
         #ifdef AUTOREG
-            //out_data_pipe.data = res_pack;
-            //out_data_pipe.exit_task = false;
-            res_pipe::write(res_pipe_T{res_pack,exit_task,fb});//out_data_pipe);
+            res_pipe::write(res_pipe_T{res_pack,exit_task,fb});
             if (exit_task) return;
-	#else
+	    #else
             res_pipe::write(res_pack);
         #endif
                     
@@ -78,8 +70,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
             auto in_data_pipe = data_pipe::read();
             bool fb = in_data_pipe.feedback;
             if(in_data_pipe.exit_task){
-                //out_data_pipe.exit_task = true;
-                res_pipe::write(res_pipe_T{{},true,fb});//out_data_pipe);
+                res_pipe::write(res_pipe_T{{},true,fb});
                 return;
             }
             auto in_data = in_data_pipe.data;
@@ -106,9 +97,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void embedding_str
                 }
 
             #ifdef AUTOREG
-                //out_data_pipe.data = res_pack;
-                //out_data_pipe.exit_task = false;
-                res_pipe::write(res_pipe_T{res_pack,false,fb});//out_data_pipe);
+                res_pipe::write(res_pipe_T{res_pack,false,fb});
             #else
                 res_pipe::write(res_pack);
             #endif

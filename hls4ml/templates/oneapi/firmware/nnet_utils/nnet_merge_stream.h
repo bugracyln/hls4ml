@@ -7,7 +7,6 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
     // both inputs are the same size
 #ifdef AUTOREG
-    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
     constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type::data_type>{};
     using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
 #else
@@ -59,7 +58,6 @@ AddLoop:
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void subtract_stream() {
     // both inputs are the same size
 #ifdef AUTOREG
-    constexpr auto inputSize = std::tuple_size<typename ExtractPipeType<input1_pipe>::value_type::data_type>{};
     constexpr auto outputSize = std::tuple_size<typename ExtractPipeType<res_pipe>::value_type::data_type>{};
     using res_pipe_unit_T = typename ExtractPipeType<res_pipe>::value_type::data_type::value_type;
 #else

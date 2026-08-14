@@ -166,7 +166,7 @@ template <class src_T, class dest_pipe> struct DMA_convert_data_single {
 
 // Symmetrical to the DMA_convert_data above, this DMA drains the output pipe and
 // writes result to memory.
-template <class src_pipe, class dst_T, class ttft_flag_T> struct DMA_convert_data_back {
+template <class src_pipe, class dst_T, class ttft_flag_T, class txct_T> struct DMA_convert_data_back {
 #if !defined(IS_BSP)
     // Without BSP, instantiate an Avalon Memory Mapped Host to write to host.
     sycl::ext::oneapi::experimental::annotated_arg<
@@ -190,6 +190,8 @@ template <class src_pipe, class dst_T, class ttft_flag_T> struct DMA_convert_dat
 
     volatile ttft_flag_T *const ttft_flag;
 
+    volatile txct_T *const tx_counter;
+
     size_t num_packs;
 
     [[intel::kernel_args_restrict]] void operator()() const {
@@ -208,41 +210,55 @@ template <class src_pipe, class dst_T, class ttft_flag_T> struct DMA_convert_dat
     #endif
 
         [[intel::fpga_register]] PipeDataType packet;
-        [[intel::fpga_register]] bool ttft_recorded = false;
+        [[intel::fpga_register]] txct_T txct = 0;
 
-#ifdef AUTOREG
-    size_t i = 0;
-    while (true){
-        packet = src_pipe::read();  
-        if (packet.exit_task) {
-            *ttft_flag = 1;
-            return;
-        }
-#else
-        // Drain the output pipe and write result to memory.
-        for (size_t i = 0; i < num_packs; i++) {
-            packet = src_pipe::read();  
-#endif
+        auto write_to_host = [&](size_t i, const PipeDataType& pack){
             #pragma unroll 4
             for (size_t j = 0; j < srcTypeSize; j++) {
             #ifdef AUTOREG
-                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet.data[j].to_double());
+                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(pack.data[j].to_double());
             #else
-                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet[j].to_double());
+                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(pack[j].to_double());
             #endif  
             }
+        };
 
-            if ((i == 0) && (!ttft_recorded)){
-                ttft_recorded = true;
-                *ttft_flag = 1;
-            }
-                
-
-        #ifdef AUTOREG
-            i = ((i + 1) >= num_packs) ? (i + 1 - num_packs) : (i + 1);
-        #endif
+    #ifdef AUTOREG
+        packet = src_pipe::read();  
+        if (packet.exit_task) {
+            *ttft_flag = 1;
+            *tx_counter = txct + 1;
+            return;
         }
-    }
+        write_to_host(0, packet);
+        *ttft_flag = 1;
+        txct = 1;
+        size_t i = (num_packs > 1) ? 1 : 0;
+
+        while (true){
+            packet = src_pipe::read();  
+            if (packet.exit_task) break;
+            txct++;
+            write_to_host(i, packet);
+            i = ((i + 1) >= num_packs) ? (i + 1 - num_packs) : (i + 1);
+        }
+        *tx_counter = txct + 1;
+    #else
+        if (num_packs > 0){
+            packet = src_pipe::read();  
+            write_to_host(0, packet);
+            *ttft_flag = 1;
+            txct = 1;
+        }
+        // Drain the output pipe and write result to memory.
+        for (size_t i = 1; i < num_packs; i++) {
+            packet = src_pipe::read();  
+            txct++;
+            write_to_host(i, packet);
+        }
+        *tx_counter = txct + 1;
+    #endif    
+    }  
 };
 
 template <class src_pipe, class dst_T> struct DMA_convert_data_back_bridge_ver {

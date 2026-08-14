@@ -143,7 +143,7 @@ void dense_rf_lt(const data_T &data, res_T &res, const typename CONFIG_T::weight
 
 // Cast to "res_t" type
 Result:
-    #pragma unroll
+    #pragma unroll CONFIG_T::num_banks
     for (int ires = 0; ires < CONFIG_T::n_out; ires++) {
         res[ires] = cast<typename data_T::value_type, typename res_T::value_type, CONFIG_T>(acc[ires]);
     }

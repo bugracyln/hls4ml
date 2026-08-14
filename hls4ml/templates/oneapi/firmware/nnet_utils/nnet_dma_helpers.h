@@ -51,7 +51,6 @@ template <class host_pipe, class feedback_pipe, class switch_pipe, typename CONF
 
     [[intel::fpga_register]] host_pipe_T in_data;
     [[intel::fpga_register]] bool switch_to_fb = false;
-    [[intel::fpga_register]] PipeSignal signal; // TODO - Check memory attribute
     [[intel::fpga_register]] iterct_t iter_ct = 0;
 
     while(true){
@@ -196,7 +195,7 @@ inline res_T argmax_stream(data_arr_T data) {
         #pragma unroll
         for (unsigned st = 0; st < loops; st++){
             unsigned curr_len = padded_len >> (st+1);
-            #pragma unroll
+            #pragma unroll loops // TODO - TUNE THIS #######################################################################################################################################################################
             for (unsigned l = 0; l < curr_len; l++) {
                 data_in_T data_first = ((2 * l) < N) ?  data[2 * l] : minval<data_in_T>();
                 data_in_T data_second = ((2 * l + 1) < N) ? data[2 * l + 1] : minval<data_in_T>();

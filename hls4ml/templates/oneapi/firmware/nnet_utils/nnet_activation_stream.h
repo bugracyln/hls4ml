@@ -104,9 +104,10 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void leaky_relu_st
 
 #else
     auto in_pipe_size = std::tuple_size<typename ExtractPipeType<data_pipe>::value_type>{};
-#endif
     constexpr unsigned multiplier_limit = DIV_ROUNDUP(in_pipe_size, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = in_pipe_size / multiplier_limit;
+#endif
+
 
 LeakyReLUActLoop:
 #ifdef AUTOREG
@@ -209,9 +210,10 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void elu_stream(ty
 #else
     using data_T = typename ExtractPipeType<data_pipe>::value_type::value_type;
     auto in_pipe_size = std::tuple_size<typename ExtractPipeType<data_pipe>::value_type>{};
-#endif
     constexpr unsigned multiplier_limit = DIV_ROUNDUP(in_pipe_size, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = in_pipe_size / multiplier_limit;
+#endif
+
 
 EluActLoop:
 #ifdef AUTOREG
@@ -336,7 +338,7 @@ SeluActLoop:
 template <class data_pipe, class res_pipe, typename CONFIG_T> void prelu_stream(typename CONFIG_T::param_t alpha) {
 
 #ifdef AUTOREG
-    using data_T = typename ExtractPipeType<data_pipe>::value_type::data_type::value_type;
+    //using data_T = typename ExtractPipeType<data_pipe>::value_type::data_type::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
     auto in_pipe_size = std::tuple_size<typename ExtractPipeType<data_pipe>::value_type::data_type>{};
 
@@ -344,9 +346,10 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void prelu_stream(
     using data_T = typename ExtractPipeType<data_pipe>::value_type::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
     auto in_pipe_size = std::tuple_size<typename ExtractPipeType<data_pipe>::value_type>{};
+    constexpr unsigned multiplier_limit = DIV_ROUNDUP(in_pipe_size, CONFIG_T::reuse_factor);
 #endif
 
-    constexpr unsigned multiplier_limit = DIV_ROUNDUP(in_pipe_size, CONFIG_T::reuse_factor);
+   
     
 
 PReLUActLoop:
@@ -540,15 +543,17 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void softmax_stabl
     using input_arr_t = typename data_packet_t::data_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
     using res_T = typename res_arr_T::value_type;
+    constexpr unsigned input_arr_size = std::tuple_size<input_arr_t>{};
 #else
     using input_arr_t = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
     using res_T = typename res_arr_T::value_type;
+    constexpr unsigned input_arr_size = std::tuple_size<input_arr_t>{};
+    constexpr unsigned multiplier_limit = DIV_ROUNDUP(input_arr_size, CONFIG_T::reuse_factor);
 #endif
 
     using input_t = typename input_arr_t::value_type;
-    constexpr unsigned input_arr_size = std::tuple_size<input_arr_t>{};
-    constexpr unsigned multiplier_limit = DIV_ROUNDUP(input_arr_size, CONFIG_T::reuse_factor);
+
     //constexpr unsigned pipeline = input_arr_size / multiplier_limit;
 
     [[intel::fpga_register]] input_t data_array[input_arr_size];
@@ -659,16 +664,17 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void softmax_laten
     using input_arr_t = typename data_packet_t::data_type;
     using res_pipe_T = typename ExtractPipeType<res_pipe>::value_type;
     using res_arr_T = typename res_pipe_T::data_type;
+    constexpr unsigned input_arr_size = std::tuple_size<input_arr_t>{};
 #else
     using input_arr_t = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-#endif
-
     constexpr unsigned input_arr_size = std::tuple_size<input_arr_t>{};
-
     constexpr unsigned multiplier_limit =
         DIV_ROUNDUP(input_arr_size, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = input_arr_size / multiplier_limit;
+#endif
+
+
 
     // Calculate all the e^x's
     [[intel::fpga_register]]
@@ -998,13 +1004,12 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void dense_tanh_st
 #else
     using data_arr_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-#endif
-
-    static const int MAX_VALUE = 4;
-
     constexpr unsigned multiplier_limit =
         DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = std::tuple_size<data_arr_T>{} / multiplier_limit;
+#endif
+
+    static const int MAX_VALUE = 4;
 
 TanHActLoop:
 #ifdef AUTOREG
@@ -1073,13 +1078,14 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void sigmoid_strea
 #else
     using data_arr_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
+    constexpr unsigned multiplier_limit =
+        DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
+    constexpr unsigned pipeline = std::tuple_size<data_arr_T>{} / multiplier_limit;
 #endif
 
     static const int MAX_VALUE = 8;
 
-    constexpr unsigned multiplier_limit =
-        DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
-    constexpr unsigned pipeline = std::tuple_size<data_arr_T>{} / multiplier_limit;
+
 
 SigmoidActLoop:
 #ifdef AUTOREG
@@ -1148,11 +1154,10 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void hard_sigmoid_
 #else
     using data_arr_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-#endif
-
     constexpr unsigned multiplier_limit =
         DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = std::tuple_size<data_arr_T>{} / multiplier_limit;
+#endif
 
 HardSigmoidActLoop:
 #ifdef AUTOREG
@@ -1207,11 +1212,12 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void hard_tanh_str
 #else
     using data_arr_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-#endif
-
     constexpr unsigned multiplier_limit =
         DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = std::tuple_size<data_arr_T>{} / multiplier_limit;
+#endif
+
+
 
 HardSigmoidActLoop:
 #ifdef AUTOREG

@@ -63,7 +63,10 @@ void read_token(Dense_in_T &token_buffer
 // weights are already transposed during compile-time in the config
 template <class data_pipe, class res_pipe, typename CONFIG_T> void einsum_dense_stream() {
 
+    //We dont use free dim of data for the autoregressive model since it is unknown at compile-time
+#ifndef AUTOREG
     constexpr unsigned L0 = CONFIG_T::n_free_data;
+#endif
     constexpr unsigned L1 = CONFIG_T::n_free_kernel;
     constexpr unsigned C = CONFIG_T::n_contract;
     constexpr unsigned I = CONFIG_T::n_inplace;

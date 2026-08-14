@@ -60,9 +60,6 @@ einsum_dense_config_template = """
     typedef {weight_t.name} weight_t;
     typedef {bias_t.name} bias_t;
 
-    static constexpr const auto *weights = {weight_arr_name}.data();
-    static constexpr const auto *biases = {bias_arr_name}.data();
-
     static constexpr bool opt_dense = {opt_dense};
     static constexpr unsigned n_head = {n_head};
 
