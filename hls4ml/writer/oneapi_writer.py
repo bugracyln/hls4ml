@@ -594,7 +594,8 @@ class OneAPIWriter(Writer):
 
         host_rw_model: bool = model.config.get_config_value('HLSConfig').setdefault('HostRW', 0)
         autoreg_model: bool = model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
-        max_iterations = -1
+        max_invoc = model.config.get_config_value('HLSConfig').setdefault('MaxInvoc', 1)
+        max_iterations = max_invoc
         if autoreg_model:
             max_iterations = model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('MaxIterations', 0)
 
@@ -632,7 +633,10 @@ class OneAPIWriter(Writer):
 
                     for idx, out in enumerate(model_outputs):
                         #import pdb; pdb.set_trace()
-                        out_buffer_size = str(max_iterations)# + out.pragma[1]) # pipe_width * num_reads
+                        if autoreg_model:
+                            out_buffer_size = str(max_iterations)# + out.pragma[1]) # pipe_width * num_reads
+                        else:
+                            out_buffer_size = str(out.pragma[1])
                         out_type = out.definition_cpp().split(' ')[0]
                         num = idx if idx >= 1 else ''
                         newline += indent + f'using output{num}_item_t = typename {out_type}::value_type;\n'
@@ -693,7 +697,7 @@ class OneAPIWriter(Writer):
                     out_names = ','.join([f'output{idx if idx >= 1 else ""}_vals' for idx, out in enumerate(model_outputs)])
                     out_t = ','.join([f'output{idx if idx >= 1 else ""}_item_t' for idx, out in enumerate(model_outputs)])
                     out_pipe_names = ','.join([out.pipe_name for out in model_outputs])
-                    out_sizes = ','.join([str(min((max_iterations if autoreg_model else np.prod(out.shape)),max_iterations)) for out in model_outputs])
+                    out_sizes = ','.join([str(max_iterations if autoreg_model else np.prod(out.shape)) for out in model_outputs])
 
                     if len(model_inputs) > 1:
                         for idx, inp in enumerate(model_inputs):
@@ -939,6 +943,7 @@ class OneAPIWriter(Writer):
                             )
                         else:"""
                         inp_names = ','.join([f'{inp.name}_vals' for inp in model_inputs])
+                        inp_size = '1' if autoreg_model else model_inputs[0].size_cpp()
                         for inp in model_inputs:
                             inp_type = inp.definition_cpp().split(' ')[0]
                             #newline += indent + f'using {inp.name}_item_t = typename {inp_type}::value_type;\n'
@@ -946,8 +951,8 @@ class OneAPIWriter(Writer):
                                 indent
                                 + f'q.single_task(nnet::DMA_convert_data_single<{dtype}, {inp.pipe_name}>'#{inp.name}_item_t, {inp.pipe_name}>'
                                 + '{'
-                                + inp_names
-                                + f', 1'#{model_inputs[0].size_cpp()}'
+                                + f'{inp.name}_vals'
+                                + f', {inp_size}'
                                 + '});\n'
                             )
 
