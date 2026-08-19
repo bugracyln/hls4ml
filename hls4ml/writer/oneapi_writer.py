@@ -636,7 +636,7 @@ class OneAPIWriter(Writer):
                         if autoreg_model:
                             out_buffer_size = str(max_iterations)# + out.pragma[1]) # pipe_width * num_reads
                         else:
-                            out_buffer_size = str(out.pragma[1])
+                            out_buffer_size = str(out.pragma[1] * np.prod(out.shape))
                         out_type = out.definition_cpp().split(' ')[0]
                         num = idx if idx >= 1 else ''
                         newline += indent + f'using output{num}_item_t = typename {out_type}::value_type;\n'
@@ -661,7 +661,7 @@ class OneAPIWriter(Writer):
                         vec_str = indent + f'{inp.name}_item_t {inp.name}_prefill[{inp.size_cpp()}] = ' + '{'
                         # TODO - MULTI DIM INPUT HANDLING
                         try:
-                            with open(f'{inp.name}_vals.tb') as file:
+                            with open(f'{model.config.get_output_dir()}/../{inp.name}_vals.tb') as file:
                                 inp_data = file.readline()
                                 vec_str += inp_data + '};\n'
                                 total_items = len(inp_data.split(','))

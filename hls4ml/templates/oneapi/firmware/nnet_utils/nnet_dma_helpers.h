@@ -29,7 +29,7 @@ struct SignalPack {
     unsigned writect = 0;
 };
 
-
+/*
 // We expect nnet::array<arr_T, 1> so a size 1 array for token feedback.
 // This unit also converts a vector to token id stream.
 template <class host_pipe, class feedback_pipe, class switch_pipe, typename CONFIG_T> void input_switch() {
@@ -70,6 +70,67 @@ template <class host_pipe, class feedback_pipe, class switch_pipe, typename CONF
                 switch_pipe::write(sw_pipe_T{sw_arr_T{el},exit_task,el == SWITCH_ID});
                 if (exit_task) return;
                 iter_ct++;
+            }
+        }
+    }
+}
+*/
+// We expect nnet::array<arr_T, 1> so a size 1 array for token feedback.
+// This unit also converts a vector to token id stream.
+template <class host_pipe, class feedback_pipe, class switch_pipe, typename CONFIG_T> void input_switch() {
+    
+    using host_pipe_T = typename ExtractPipeType<host_pipe>::value_type;
+    using fb_pipe_T = typename ExtractPipeType<feedback_pipe>::value_type;
+    using data_T = typename host_pipe_T::value_type;
+    using sw_pipe_T = typename ExtractPipeType<switch_pipe>::value_type;
+    using sw_arr_T = typename sw_pipe_T::data_type;
+
+    //TODO - CHECK IF THESE QUANTISE TO THE SAME AS SW_DATA_T##############################
+    static constexpr data_T SWITCH_ID = CONFIG_T::switch_signal;
+    static constexpr data_T STOP_ID = CONFIG_T::stop_signal;
+    //#####################################################################################
+
+    static constexpr unsigned MAX_ITER_BITS = ceil_log2(CONFIG_T::max_iterations) + 1;
+    using iterct_t = ac_fixed<MAX_ITER_BITS,MAX_ITER_BITS,false>;
+    static constexpr iterct_t MAX_ITERATIONS =  CONFIG_T::max_iterations;
+
+    [[intel::fpga_register]] host_pipe_T in_data;
+    [[intel::fpga_register]] bool switch_to_fb = false;
+    [[intel::fpga_register]] iterct_t iter_ct = 0;
+
+    while(true){
+        if(switch_to_fb){ // Feedback path is a per-token stream so we expect nnet::array<type,1>
+            fb_pipe_T inp_id = feedback_pipe::read();
+            bool exit_task = (inp_id[0] == STOP_ID || iter_ct + 1 >= MAX_ITERATIONS);
+            switch_pipe::write(sw_pipe_T{inp_id,exit_task,!exit_task});
+            if (exit_task) return;
+            iter_ct++;
+        }
+        else{ // This branch expects a single vector DMA transfer of switch IDs, serialises them
+            in_data = host_pipe::read();
+            if(in_data[0] == SWITCH_ID || in_data[0] == STOP_ID){ 
+                switch_pipe::write(sw_pipe_T{sw_arr_T{},true,false});
+                return;
+            }
+            data_T prev_token = in_data[0];
+            bool exit_task = false;
+    
+            for(unsigned host_it = 1; host_it < std::tuple_size<host_pipe_T>{}; host_it++){
+                data_T el = in_data[host_it];
+                if (el == SWITCH_ID) switch_to_fb = true;
+                switch_pipe::write(sw_pipe_T{sw_arr_T{prev_token},exit_task,el == SWITCH_ID});
+                if (exit_task) return;
+                iter_ct++;
+                exit_task = (el == STOP_ID || iter_ct + 1 >= MAX_ITERATIONS);
+                prev_token = el;
+                if (switch_to_fb) break;
+            }
+            if(!switch_to_fb){
+                bool final_el_exit = exit_task || iter_ct + 1 >= MAX_ITERATIONS;
+                switch_pipe::write(sw_pipe_T{sw_arr_T{prev_token},final_el_exit,!final_el_exit});
+                if (final_el_exit) return;
+                iter_ct++;
+                switch_to_fb = true;
             }
         }
     }
