@@ -857,11 +857,17 @@ class GlobalPooling1D(Layer):
     _expected_attributes = [
         Attribute('n_in'),
         Attribute('n_filt'),
+        Attribute('keepdims', value_type=bool, default=False),
         ChoiceAttribute('pool_op', ['Max', 'Average'], configurable=False),
     ]
 
     def initialize(self):
-        shape = [self.attributes['n_filt']]
+        # get_attr with a default: initialize() runs before defaults of expected attributes are
+        # applied, and not every frontend sets 'keepdims'
+        if self.get_attr('keepdims', False):
+            shape = [1, self.attributes['n_filt']]
+        else:
+            shape = [self.attributes['n_filt']]
         self.add_output_variable(shape)
         self.set_attr('pool_op', self.get_attr('class_name').split('Pooling')[0].replace('Global', ''))
 
@@ -871,11 +877,15 @@ class GlobalPooling2D(Layer):
         Attribute('in_height'),
         Attribute('in_width'),
         Attribute('n_filt'),
+        Attribute('keepdims', value_type=bool, default=False),
         ChoiceAttribute('pool_op', ['Max', 'Average'], configurable=False),
     ]
 
     def initialize(self):
-        shape = [self.attributes['n_filt']]
+        if self.get_attr('keepdims', False):
+            shape = [1, 1, self.attributes['n_filt']]
+        else:
+            shape = [self.attributes['n_filt']]
         self.add_output_variable(shape)
         self.set_attr('pool_op', self.get_attr('class_name').split('Pooling')[0].replace('Global', ''))
 
@@ -1471,12 +1481,11 @@ class SimpleRNN(Layer):
 
         if self.attributes['return_state']:
             state_shape = [self.attributes['n_out']]
-            state_dims = [f'N_OUT_{self.index}']
             self.add_output_variable(
-                state_shape, state_dims, out_name=self.outputs[1], var_name='layer{index}_h', type_name='layer{index}_h_t'
+                state_shape, out_name=self.outputs[1], var_name='layer{index}_h', type_name='layer{index}_h_t'
             )
             self.add_output_variable(
-                state_shape, state_dims, out_name=self.outputs[2], var_name='layer{index}_c', type_name='layer{index}_c_t'
+                state_shape, out_name=self.outputs[2], var_name='layer{index}_c', type_name='layer{index}_c_t'
             )
 
         # weights
@@ -1521,12 +1530,11 @@ class LSTM(Layer):
 
         if self.attributes['return_state']:
             state_shape = [self.attributes['n_out']]
-            state_dims = [f'N_OUT_{self.index}']
             self.add_output_variable(
-                state_shape, state_dims, out_name=self.outputs[1], var_name='layer{index}_h', type_name='layer{index}_h_t'
+                state_shape, out_name=self.outputs[1], var_name='layer{index}_h', type_name='layer{index}_h_t'
             )
             self.add_output_variable(
-                state_shape, state_dims, out_name=self.outputs[2], var_name='layer{index}_c', type_name='layer{index}_c_t'
+                state_shape, out_name=self.outputs[2], var_name='layer{index}_c', type_name='layer{index}_c_t'
             )
 
         # weights
@@ -1577,12 +1585,11 @@ class GRU(Layer):
 
         if self.attributes['return_state']:
             state_shape = [self.attributes['n_out']]
-            state_dims = [f'N_OUT_{self.index}']
             self.add_output_variable(
-                state_shape, state_dims, out_name=self.outputs[1], var_name='layer{index}_h', type_name='layer{index}_h_t'
+                state_shape, out_name=self.outputs[1], var_name='layer{index}_h', type_name='layer{index}_h_t'
             )
             self.add_output_variable(
-                state_shape, state_dims, out_name=self.outputs[2], var_name='layer{index}_c', type_name='layer{index}_c_t'
+                state_shape, out_name=self.outputs[2], var_name='layer{index}_c', type_name='layer{index}_c_t'
             )
 
         # weights
@@ -1906,6 +1913,96 @@ class DACombinational(Layer):
         self.add_output_variable(shape)
 
 
+class SparseInputReduce(Layer):
+    _expected_attributes = [
+        Attribute('in_height'),
+        Attribute('in_width'),
+        Attribute('n_chan'),
+        Attribute('n_sparse'),
+        Attribute('threshold', value_type=float),
+        Attribute('hash_bits', value_type=int, default=10),
+    ]
+
+    def initialize(self):
+        shape = [self.attributes['n_sparse'] * self.attributes['n_chan']]
+        self.add_output_variable(shape)
+
+
+class SparseConv2D(Layer):
+    _expected_attributes = [
+        Attribute('n_sparse'),
+        Attribute('n_chan'),
+        Attribute('n_filt'),
+        Attribute('kernel_size'),
+        WeightAttribute('weight'),
+        WeightAttribute('bias'),
+        TypeAttribute('weight'),
+        TypeAttribute('bias'),
+        TypeAttribute('accum'),
+    ]
+
+    def initialize(self):
+        shape = [self.attributes['n_sparse'] * self.attributes['n_filt']]
+        self.add_output_variable(shape)
+        self.add_weights(quantizer=self.get_attr('weight_quantizer'))
+        self.add_bias(quantizer=self.get_attr('bias_quantizer'))
+
+    def add_bias(self, quantizer=None):
+        data = self.get_attr('bias_data', None)
+        precision = None
+        type_name = None
+        if data is None:
+            data = np.zeros(self.attributes['n_filt'])
+            precision = IntegerPrecisionType(width=1, signed=False)
+            type_name = 'bias{index}_t'
+            quantizer = None
+        self.add_weights_variable(
+            name='bias', var_name='b{index}', type_name=type_name, precision=precision, data=data, quantizer=quantizer
+        )
+
+
+class SparseActivation(Layer):
+    _expected_attributes = [
+        Attribute('n_sparse'),
+        Attribute('n_chan'),
+        Attribute('activation', value_type=str),
+    ]
+
+    def initialize(self):
+        shape = [self.attributes['n_sparse'] * self.attributes['n_chan']]
+        self.add_output_variable(shape)
+
+
+class SparsePooling2D(Layer):
+    _expected_attributes = [
+        Attribute('n_sparse'),
+        Attribute('n_chan'),
+        Attribute('in_height'),
+        Attribute('in_width'),
+        Attribute('pool_height'),
+        Attribute('pool_width'),
+        Attribute('pool_op', value_type=str, default='avg'),  # 'avg' or 'max'
+        TypeAttribute('accum'),
+    ]
+
+    def initialize(self):
+        shape = [self.attributes['n_sparse'] * self.attributes['n_chan']]
+        self.add_output_variable(shape)
+
+
+class SparseFlatten(Layer):
+    _expected_attributes = [
+        Attribute('n_sparse'),
+        Attribute('n_chan'),
+        Attribute('out_height'),
+        Attribute('out_width'),
+    ]
+
+    def initialize(self):
+        shape = [self.attributes['out_height'] * self.attributes['out_width'] * self.attributes['n_chan']]
+        self.add_output_variable(shape)
+
+
 layer_map = {
     'Input': Input,
     'InputLayer': Input,
@@ -1914,6 +2011,7 @@ layer_map = {
     'QActivation': Activation,
     'LeakyReLU': ParametrizedActivation,
     'ThresholdedReLU': ParametrizedActivation,
+    'ClippedReLU': ParametrizedActivation,
     'ELU': ParametrizedActivation,
     'PReLU': PReLU,
     'Softmax': Softmax,
@@ -1987,6 +2085,12 @@ layer_map = {
     # TensorFlow-specific layers:
     'BiasAdd': BiasAdd,
     'DACombinational': DACombinational,
+    # Sparsepixels layers:
+    'SparseInputReduce': SparseInputReduce,
+    'SparseConv2D': SparseConv2D,
+    'SparseActivation': SparseActivation,
+    'SparsePooling2D': SparsePooling2D,
+    'SparseFlatten': SparseFlatten,
 }
 
 
