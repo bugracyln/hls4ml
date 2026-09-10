@@ -1,4 +1,5 @@
 import shutil
+
 from hls4ml.backends.backend import get_backend
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
 from hls4ml.backends.template import FunctionCallTemplate, LayerConfigTemplate
@@ -19,9 +20,11 @@ dense_config_template = """struct config{index}_dense : nnet::dense_config {{
 
     static constexpr unsigned rf_pad = 0;
     static constexpr unsigned bf_pad = 0;
+    static constexpr bool argmax = {argmax};
 
     static constexpr unsigned reuse_factor = {reuse};
-    static constexpr unsigned num_banks = nnet::numbanks_round(DIV_ROUNDUP(n_in, reuse_factor));
+    static constexpr unsigned num_lanes = DIV_ROUNDUP(n_in, reuse_factor);
+    static constexpr unsigned num_banks = 1 << nnet::ceil_log2(num_lanes);
     static constexpr unsigned compressed_block_factor = DIV_ROUNDUP(n_nonzeros, reuse_factor);
     static constexpr unsigned reuse_factor_rounded = reuse_factor + rf_pad;
     static constexpr unsigned block_factor = DIV_ROUNDUP(n_in*n_out, reuse_factor);
@@ -62,6 +65,7 @@ einsum_dense_config_template = """
 
     static constexpr bool opt_dense = {opt_dense};
     static constexpr unsigned n_head = {n_head};
+    static constexpr bool argmax = {argmax};
 
     {kernel_config};
 
@@ -107,6 +111,7 @@ class EinsumDenseConfigTemplate(LayerConfigTemplate):
 
         dense_params['n_in'] = node.attributes['n_contract']
         dense_params['n_out'] = node.attributes['n_free_kernel']
+        dense_params.setdefault('argmax', 'false')
 
         if node.attributes['n_inplace'] == 1:
             dense_params['nzeros'] = node.get_weights('weight').nzeros  # type: ignore
@@ -119,6 +124,12 @@ class EinsumDenseConfigTemplate(LayerConfigTemplate):
             node.get_weights('weight').type.precision,  # type: ignore
         )
 
+        autoreg = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+        if autoreg:
+            argmax: bool = node.model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('Argmax', False)
+            if argmax and node in node.model.outputs:
+                dense_params['argmax'] = 'true'
+
         dense_config = self.dense_template.format(**dense_params)
         return dense_config
 
@@ -127,10 +138,6 @@ class EinsumDenseConfigTemplate(LayerConfigTemplate):
 
         strategy = node.attributes['strategy']
 
-        # NO NEED THIS SINCE EINSUM CAN NOW BE STREAMED
-        # io_type = node.model.config.get_config_value('IOType')
-        # assert io_type == 'io_parallel', 'EinsumDense layer only supports io_parallel and distributed_arithmetic'
-
         # EinsumDense config
         params = default_params.copy()
         params['strategy'] = strategy
@@ -138,6 +145,14 @@ class EinsumDenseConfigTemplate(LayerConfigTemplate):
         params['n_free_kernel'] = node.attributes['n_free_kernel']
         params['n_contract'] = node.attributes['n_contract']
         params['n_inplace'] = node.attributes['n_inplace']
+        params.setdefault('argmax', 'false')
+
+        autoreg = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+        if autoreg:
+            argmax: bool = node.model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('Argmax', False)
+            if argmax and node.name in node.model.outputs:
+                params['argmax'] = 'true'
+                node.set_attr('argmax', 'true')
 
         params['weight_arr_name'] = node.get_weights('weight').name
         params['bias_arr_name'] = node.get_weights('bias').name
@@ -237,17 +252,17 @@ class EinsumStreamTaskSequenceTemplate(TaskSequenceTemplate):
             params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
 
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
-        
+
         if autoreg_model:
-            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()]
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
 
-            if (params['input_pipe'] in model_inp_names):
-                params['input_pipe'] = "SW_" + params['input_pipe']
-                
-            if (params['output_pipe'] in model_out_names):
-                params['output_pipe'] = "SW_" + params['output_pipe']
-                
+            if params['input_pipe'] in model_inp_names:
+                params['input_pipe'] = 'SW_' + params['input_pipe']
+
+            if params['output_pipe'] in model_out_names:
+                params['output_pipe'] = 'SW_' + params['output_pipe']
+
         return self.template.format(**params)
 
 

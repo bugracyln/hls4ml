@@ -1,4 +1,5 @@
 import shutil
+
 from hls4ml.backends.backend import get_backend
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
 from hls4ml.backends.template import FunctionCallTemplate, LayerConfigTemplate
@@ -13,6 +14,7 @@ conv_mult_config_template = """struct config{index}_mult : nnet::dense_config {{
 
     static const unsigned rf_pad = {rfpad};
     static const unsigned bf_pad = {bfpad};
+    static const bool argmax = {argmax};
 
     static const unsigned reuse_factor = {reuse};
     static const unsigned reuse_factor_rounded = reuse_factor + rf_pad;
@@ -21,7 +23,8 @@ conv_mult_config_template = """struct config{index}_mult : nnet::dense_config {{
     static const unsigned multiplier_factor = MIN(n_in, reuse_factor);
     static const unsigned multiplier_limit = DIV_ROUNDUP(n_in*n_out, multiplier_factor);
     static const unsigned multiplier_scale = multiplier_limit/n_out;
-    static constexpr unsigned num_banks = DIV_ROUNDUP(n_in, reuse_factor);
+    static constexpr unsigned num_lanes = DIV_ROUNDUP(n_in, reuse_factor);
+    static constexpr unsigned num_banks = 1 << nnet::ceil_log2(num_lanes);
 
     typedef {accum_t.name} accum_t;
     typedef {bias_t.name} bias_t;
@@ -51,6 +54,7 @@ conv1d_config_template = """struct config{index} : nnet::conv1d_config {{
     static const unsigned reuse_factor = {reuse};
     static const unsigned parallelization_factor = {parallelization};
     static const bool store_weights_in_bram = false;
+    static const bool argmax = {argmax};
 
     static const nnet::conv1d_implementation implementation = nnet::conv1d_implementation::{implementation};
 
@@ -110,16 +114,28 @@ class Conv1DConfigTemplate(LayerConfigTemplate):
         conv_params['biases'] = node.get_weights('bias').name
 
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
-        conv_params['per_item_stream'] = 'true' if autoreg_model else 'false' # TODO - Add handler to account for autoreg image stream
-
-        conv_config = self.template.format(**conv_params)
+        conv_params['per_item_stream'] = (
+            'true' if autoreg_model else 'false'
+        )  # TODO - Add handler to account for autoreg image stream
+        conv_params['argmax'] = 'false'
 
         mult_params = self._default_config_params(node)
+        mult_params['argmax'] = 'false'
         mult_params['n_in'] = node.get_attr('n_chan') * node.get_attr('filt_width')
         mult_params['n_out'] = node.get_attr('n_filt')
         mult_params['product_type'] = get_backend('oneAPI').product_type(
             node.get_input_variable().type.precision, node.get_weights('weight').type.precision
         )
+
+        autoreg = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None)
+        if autoreg:
+            argmax: bool = node.model.config.get_config_value('HLSConfig')['Autoregressive'].setdefault('Argmax', False)
+            if argmax and node.name in node.model.outputs:
+                conv_params['argmax'] = 'true'
+                mult_params['argmax'] = 'true'
+                node.set_attr('argmax', 'true')
+
+        conv_config = self.template.format(**conv_params)
         mult_config = self.mult_template.format(**mult_params)
 
         return mult_config + '\n' + conv_config
@@ -160,14 +176,14 @@ class Conv1DTaskSequenceTemplate(TaskSequenceTemplate):
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         if autoreg_model:
-            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()]
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
 
-            if (params['input_pipe'] in model_inp_names):
-                params['input_pipe'] = "SW_" + params['input_pipe']
-                
-            if (params['output_pipe'] in model_out_names):
-                params['output_pipe'] = "SW_" + params['output_pipe']
+            if params['input_pipe'] in model_inp_names:
+                params['input_pipe'] = 'SW_' + params['input_pipe']
+
+            if params['output_pipe'] in model_out_names:
+                params['output_pipe'] = 'SW_' + params['output_pipe']
 
         return self.template.format(**params)
 
@@ -306,15 +322,15 @@ class Conv2DTaskSequenceTemplate(TaskSequenceTemplate):
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         if autoreg_model:
-            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()]
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
 
-            if (params['input_pipe'] in model_inp_names):
-                params['input_pipe'] = "SW_" + params['input_pipe']
+            if params['input_pipe'] in model_inp_names:
+                params['input_pipe'] = 'SW_' + params['input_pipe']
 
-            if (params['output_pipe'] in model_out_names):
-                params['output_pipe'] = "SW_" + params['output_pipe']
-            
+            if params['output_pipe'] in model_out_names:
+                params['output_pipe'] = 'SW_' + params['output_pipe']
+
         return self.template.format(**params)
 
 

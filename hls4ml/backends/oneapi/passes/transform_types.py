@@ -31,22 +31,30 @@ class TransformTypes(GlobalOptimizerPass):
             if io_type == 'io_stream':
                 if out_name in node.model.inputs:
                     if node.get_attr('token_stream', False):
-                        new_var = self.interface_var_converter.convert(var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1)
+                        new_var = self.interface_var_converter.convert(
+                            var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1
+                        )
                     else:
                         new_var = self.interface_var_converter.convert(var, pragma='stream')
                 elif out_name in node.model.outputs:
                     if node.get_attr('token_stream', False):
-                        new_var = self.interface_var_converter.convert(var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1)
+                        new_var = self.interface_var_converter.convert(
+                            var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1
+                        )
                     else:
                         new_var = self.interface_var_converter.convert(var, pragma='stream')
                 elif isinstance(var, InplaceTensorVariable):
                     if node.get_attr('token_stream', False):
-                        new_var = self.inplace_stream_var_converter.convert(var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1)
+                        new_var = self.inplace_stream_var_converter.convert(
+                            var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1
+                        )
                     else:
                         new_var = self.inplace_stream_var_converter.convert(var, pragma='stream')
                 else:
                     if node.get_attr('token_stream', False):
-                        new_var = self.stream_var_converter.convert(var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1)
+                        new_var = self.stream_var_converter.convert(
+                            var, pragma='stream', depth=var.shape[0], n_pack=1, n_elem=1
+                        )
                     else:
                         new_var = self.stream_var_converter.convert(var, pragma='stream')
             elif io_type == 'io_parallel':

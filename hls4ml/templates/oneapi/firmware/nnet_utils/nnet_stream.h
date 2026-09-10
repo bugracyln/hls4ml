@@ -24,7 +24,7 @@ template <class data_pipe, class res1_pipe, class res2_pipe, int N> void clone_s
 
 CloneLoop:
 #ifdef AUTOREG
-    while (true) {
+    [[intel::initiation_interval(1)]] while (true) {
 #else
     [[intel::initiation_interval(1)]] for (int i = 0; i < N / datasize; i++) {
 #endif
@@ -32,33 +32,28 @@ CloneLoop:
         res1_T out_data1;
         res2_T out_data2;
         bool fb = in_data.feedback;
+        bool exit_task = in_data.exit_task;
         out_data1.feedback = fb;
         out_data2.feedback = fb;
-
-    #ifdef AUTOREG
-        if (in_data.exit_task){
-            out_data1.exit_task = true;
-            out_data2.exit_task = true;
-            res1_pipe::write(out_data1);
-            res2_pipe::write(out_data2);
-            return;
-        }
-    #endif
+        out_data1.exit_task = exit_task;
+        out_data2.exit_task = exit_task;
 
     ClonePack:
         #pragma unroll
         for (int j = 0; j < datasize; j++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             out_data1.data[j] = in_data.data[j];
             out_data2.data[j] = in_data.data[j];
-        #else
+#else
             out_data1[j] = in_data[j];
             out_data2[j] = in_data[j];
-        #endif
+#endif
         }
 
         res1_pipe::write(out_data1);
         res2_pipe::write(out_data2);
+        if (exit_task)
+            return;
     }
 }
 
@@ -75,7 +70,7 @@ template <class data_pipe, class res1_pipe, class res2_pipe, class res3_pipe, in
 
 CloneLoop:
 #ifdef AUTOREG
-    while (true) {
+    [[intel::initiation_interval(1)]] while (true) {
 #else
     [[intel::initiation_interval(1)]] for (int i = 0; i < N / datasize; i++) {
 #endif
@@ -83,40 +78,34 @@ CloneLoop:
         res1_T out_data1;
         res2_T out_data2;
         res3_T out_data3;
+        bool exit_task = in_data.exit_task;
         bool fb = in_data.feedback;
         out_data1.feedback = fb;
         out_data2.feedback = fb;
         out_data3.feedback = fb;
-
-    #ifdef AUTOREG
-        if (in_data.exit_task){
-            out_data1.exit_task = true;
-            out_data2.exit_task = true;
-            out_data3.exit_task = true;
-            res1_pipe::write(out_data1);
-            res2_pipe::write(out_data2);
-            res3_pipe::write(out_data3);
-            return;
-        }
-    #endif
+        out_data1.exit_task = exit_task;
+        out_data2.exit_task = exit_task;
+        out_data3.exit_task = exit_task;
 
     ClonePack:
         #pragma unroll
         for (int j = 0; j < datasize; j++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             out_data1.data[j] = in_data.data[j];
             out_data2.data[j] = in_data.data[j];
             out_data3.data[j] = in_data.data[j];
-        #else
+#else
             out_data1[j] = in_data[j];
             out_data2[j] = in_data[j];
             out_data3[j] = in_data[j];
-        #endif
+#endif
         }
 
         res1_pipe::write(out_data1);
         res2_pipe::write(out_data2);
         res3_pipe::write(out_data3);
+        if (exit_task)
+            return;
     }
 }
 
@@ -134,7 +123,7 @@ template <class data_pipe, class res1_pipe, class res2_pipe, class res3_pipe, cl
 
 CloneLoop:
 #ifdef AUTOREG
-    while (true) {
+    [[intel::initiation_interval(1)]] while (true) {
 #else
     [[intel::initiation_interval(1)]] for (int i = 0; i < N / datasize; i++) {
 #endif
@@ -148,10 +137,9 @@ CloneLoop:
         out_data2.feedback = fb;
         out_data3.feedback = fb;
         out_data4.feedback = fb;
-        
 
-    #ifdef AUTOREG
-        if (in_data.exit_task){
+#ifdef AUTOREG
+        if (in_data.exit_task) {
             out_data1.exit_task = true;
             out_data2.exit_task = true;
             out_data3.exit_task = true;
@@ -162,22 +150,22 @@ CloneLoop:
             res4_pipe::write(out_data4);
             return;
         }
-    #endif
+#endif
 
     ClonePack:
         #pragma unroll
-        for (int j = 0; j < datasize; j++) {    
-        #ifdef AUTOREG
+        for (int j = 0; j < datasize; j++) {
+#ifdef AUTOREG
             out_data1.data[j] = in_data.data[j];
             out_data2.data[j] = in_data.data[j];
             out_data3.data[j] = in_data.data[j];
             out_data4.data[j] = in_data.data[j];
-        #else
+#else
             out_data1[j] = in_data[j];
             out_data2[j] = in_data[j];
             out_data3[j] = in_data[j];
             out_data4[j] = in_data[j];
-        #endif
+#endif
         }
 
         res1_pipe::write(out_data1);
@@ -203,7 +191,7 @@ void clone_stream() {
 
 CloneLoop:
 #ifdef AUTOREG
-    while (true) {
+    [[intel::initiation_interval(1)]] while (true) {
 #else
     [[intel::initiation_interval(1)]] for (int i = 0; i < N / datasize; i++) {
 #endif
@@ -219,10 +207,9 @@ CloneLoop:
         out_data3.feedback = fb;
         out_data4.feedback = fb;
         out_data5.feedback = fb;
-        
 
-    #ifdef AUTOREG
-        if (in_data.exit_task){
+#ifdef AUTOREG
+        if (in_data.exit_task) {
             out_data1.exit_task = true;
             out_data2.exit_task = true;
             out_data3.exit_task = true;
@@ -235,24 +222,24 @@ CloneLoop:
             res5_pipe::write(out_data5);
             return;
         }
-    #endif
+#endif
 
     ClonePack:
         #pragma unroll
-        for (int j = 0; j < datasize; j++) {    
-        #ifdef AUTOREG
+        for (int j = 0; j < datasize; j++) {
+#ifdef AUTOREG
             out_data1.data[j] = in_data.data[j];
             out_data2.data[j] = in_data.data[j];
             out_data3.data[j] = in_data.data[j];
             out_data4.data[j] = in_data.data[j];
             out_data5.data[j] = in_data.data[j];
-        #else
+#else
             out_data1[j] = in_data[j];
             out_data2[j] = in_data[j];
             out_data3[j] = in_data[j];
             out_data4[j] = in_data[j];
             out_data5[j] = in_data[j];
-        #endif
+#endif
         }
 
         res1_pipe::write(out_data1);
@@ -264,7 +251,7 @@ CloneLoop:
 }
 
 template <class data_pipe, class res1_pipe, class res2_pipe, class res3_pipe, class res4_pipe, class res5_pipe,
-            class res6_pipe, int N>
+          class res6_pipe, int N>
 void clone_stream() {
     using data_T = typename ExtractPipeType<data_pipe>::value_type;
     using res1_T = typename ExtractPipeType<res1_pipe>::value_type;
@@ -281,7 +268,7 @@ void clone_stream() {
 
 CloneLoop:
 #ifdef AUTOREG
-    while (true) {
+    [[intel::initiation_interval(1)]] while (true) {
 #else
     [[intel::initiation_interval(1)]] for (int i = 0; i < N / datasize; i++) {
 #endif
@@ -299,10 +286,9 @@ CloneLoop:
         out_data4.feedback = fb;
         out_data5.feedback = fb;
         out_data6.feedback = fb;
-        
 
-    #ifdef AUTOREG
-        if (in_data.exit_task){
+#ifdef AUTOREG
+        if (in_data.exit_task) {
             out_data1.exit_task = true;
             out_data2.exit_task = true;
             out_data3.exit_task = true;
@@ -317,26 +303,26 @@ CloneLoop:
             res6_pipe::write(out_data6);
             return;
         }
-    #endif
+#endif
 
     ClonePack:
         #pragma unroll
-        for (int j = 0; j < datasize; j++) {    
-        #ifdef AUTOREG
+        for (int j = 0; j < datasize; j++) {
+#ifdef AUTOREG
             out_data1.data[j] = in_data.data[j];
             out_data2.data[j] = in_data.data[j];
             out_data3.data[j] = in_data.data[j];
             out_data4.data[j] = in_data.data[j];
             out_data5.data[j] = in_data.data[j];
             out_data6.data[j] = in_data.data[j];
-        #else
+#else
             out_data1[j] = in_data[j];
             out_data2[j] = in_data[j];
             out_data3[j] = in_data[j];
             out_data4[j] = in_data[j];
             out_data5[j] = in_data[j];
             out_data6[j] = in_data[j];
-        #endif
+#endif
         }
 
         res1_pipe::write(out_data1);
@@ -348,8 +334,8 @@ CloneLoop:
     }
 }
 
-template <class data_pipe, class res1_pipe, class res2_pipe, class res3_pipe, class res4_pipe, class res5_pipe, 
-            class res6_pipe, class res7_pipe, int N>
+template <class data_pipe, class res1_pipe, class res2_pipe, class res3_pipe, class res4_pipe, class res5_pipe,
+          class res6_pipe, class res7_pipe, int N>
 void clone_stream() {
     using data_T = typename ExtractPipeType<data_pipe>::value_type;
     using res1_T = typename ExtractPipeType<res1_pipe>::value_type;
@@ -367,7 +353,7 @@ void clone_stream() {
 
 CloneLoop:
 #ifdef AUTOREG
-    while (true) {
+    [[intel::initiation_interval(1)]] while (true) {
 #else
     [[intel::initiation_interval(1)]] for (int i = 0; i < N / datasize; i++) {
 #endif
@@ -387,10 +373,9 @@ CloneLoop:
         out_data5.feedback = fb;
         out_data6.feedback = fb;
         out_data7.feedback = fb;
-    
 
-    #ifdef AUTOREG
-        if (in_data.exit_task){
+#ifdef AUTOREG
+        if (in_data.exit_task) {
             out_data1.exit_task = true;
             out_data2.exit_task = true;
             out_data3.exit_task = true;
@@ -407,12 +392,12 @@ CloneLoop:
             res7_pipe::write(out_data7);
             return;
         }
-    #endif
+#endif
 
     ClonePack:
         #pragma unroll
-        for (int j = 0; j < datasize; j++) {    
-        #ifdef AUTOREG
+        for (int j = 0; j < datasize; j++) {
+#ifdef AUTOREG
             out_data1.data[j] = in_data.data[j];
             out_data2.data[j] = in_data.data[j];
             out_data3.data[j] = in_data.data[j];
@@ -420,7 +405,7 @@ CloneLoop:
             out_data5.data[j] = in_data.data[j];
             out_data6.data[j] = in_data.data[j];
             out_data7.data[j] = in_data.data[j];
-        #else
+#else
             out_data1[j] = in_data[j];
             out_data2[j] = in_data[j];
             out_data3[j] = in_data[j];
@@ -428,7 +413,7 @@ CloneLoop:
             out_data5[j] = in_data[j];
             out_data6[j] = in_data[j];
             out_data7[j] = in_data[j];
-        #endif
+#endif
         }
 
         res1_pipe::write(out_data1);
@@ -453,63 +438,63 @@ template <class data_pipe, class res_pipe, int N> void repack_stream() {
     constexpr auto ressize = std::tuple_size<res_T>{};
 #endif
     if constexpr (datasize == ressize) {
-    #ifdef AUTOREG
-        while (true){
-    #else
+#ifdef AUTOREG
+        [[intel::initiation_interval(1)]] while (true) {
+#else
         [[intel::initiation_interval(1)]] for (int i = 0; i < N / datasize; i++) {
-    #endif
+#endif
             [[intel::fpga_memory]] auto in_data = data_pipe::read();
             [[intel::fpga_memory]] res_T out_data;
 
-        #ifdef AUTOREG  
+#ifdef AUTOREG
             out_data.feedback = in_data.feedback;
-            if (in_data.exit_task){
+            if (in_data.exit_task) {
                 out_data.exit_task = true;
                 res_pipe::write(out_data);
                 return;
             }
-        #endif
+#endif
 
             #pragma unroll
             for (int j = 0; j < datasize; j++) {
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 out_data.data[j] = in_data.data[j];
-            #else
+#else
                 out_data[j] = in_data[j];
-            #endif
+#endif
             }
 
             res_pipe::write(out_data);
         }
     } else if constexpr (datasize > ressize) {
         constexpr unsigned pack_diff = datasize / ressize;
-    #ifdef AUTOREG
-        while (true){
-    #else
+#ifdef AUTOREG
+        [[intel::initiation_interval(1)]] while (true) {
+#else
         for (int i = 0; i < N / datasize; i++) {
-    #endif
+#endif
             [[intel::fpga_memory]] auto in_data = data_pipe::read();
             [[intel::fpga_memory]] res_T out_data;
 
-        #ifdef AUTOREG  
+#ifdef AUTOREG
             out_data.feedback = in_data.feedback;
-            if (in_data.exit_task){
+            if (in_data.exit_task) {
                 out_data.exit_task = true;
                 res_pipe::write(out_data);
                 return;
             }
-        #endif
+#endif
 
             [[intel::initiation_interval(1)]] for (int j = 0; j < pack_diff; j++) {
 
                 #pragma unroll
                 for (int k = 0; k < ressize; k++) {
-                    
-                #ifdef AUTOREG
+
+#ifdef AUTOREG
                     out_data.data[k] = in_data.data[j * ressize + k];
-                #else
+#else
                     out_data[k] = in_data[j * ressize + k];
-                #endif
+#endif
                 }
                 res_pipe::write(out_data);
             }
@@ -519,30 +504,30 @@ template <class data_pipe, class res_pipe, int N> void repack_stream() {
         constexpr unsigned pack_diff = ressize / datasize;
         unsigned pack_cnt = 0;
 
-    #ifdef AUTOREG
-        while (true) {
-    #else
+#ifdef AUTOREG
+        [[intel::initiation_interval(1)]] while (true) {
+#else
         [[intel::initiation_interval(1)]] for (int i = 0; i < N / datasize; i++) {
-    #endif
+#endif
 
             [[intel::fpga_memory]] auto in_data = data_pipe::read();
 
-        #ifdef AUTOREG  
-                out_data.feedback = in_data.feedback;
-            if (in_data.exit_task){
+#ifdef AUTOREG
+            out_data.feedback = in_data.feedback;
+            if (in_data.exit_task) {
                 out_data.exit_task = true;
                 res_pipe::write(out_data);
                 return;
             }
-        #endif
+#endif
 
             #pragma unroll
             for (int j = 0; j < datasize; j++) {
-            #ifdef AUTOREG 
+#ifdef AUTOREG
                 out_data.data[pack_cnt * datasize + j] = in_data.data[j];
-            #else
+#else
                 out_data[pack_cnt * datasize + j] = in_data[j];
-            #endif
+#endif
             }
 
             if (pack_cnt == pack_diff - 1) {

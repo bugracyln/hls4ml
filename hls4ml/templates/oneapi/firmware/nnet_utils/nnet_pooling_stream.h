@@ -25,35 +25,36 @@ namespace nnet {
  */
 template <class data_arr_T, class data_window_T, class res_pipe, typename CONFIG_T>
 void compute_pool_buffer_1d(const data_arr_T &in_elem,
-                            #ifdef AUTOREG
-                            nnet::shift_reg<typename data_arr_T::data_type::value_type, CONFIG_T::in_width> 
-                            #else
-                            nnet::shift_reg<typename data_arr_T::value_type, CONFIG_T::in_width> 
-                            #endif
-                            line_buffer[CONFIG_T::n_filt],
-                            data_window_T &kernel_window, int &pX, int &sX 
-                        #ifdef AUTOREG
-                            , bool &exit_task
-                        #endif
-                            ) {
+#ifdef AUTOREG
+                            nnet::shift_reg<typename data_arr_T::data_type::value_type, CONFIG_T::in_width>
+#else
+                            nnet::shift_reg<typename data_arr_T::value_type, CONFIG_T::in_width>
+#endif
+                                line_buffer[CONFIG_T::n_filt],
+                            data_window_T &kernel_window, int &pX, int &sX
+#ifdef AUTOREG
+                            ,
+                            bool &exit_task
+#endif
+) {
 
-    #ifdef AUTOREG
-        using data_T = typename data_arr_T::data_type;
-        using res_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
-        [[intel::fpga_register]]  typename ExtractPipeType<res_pipe>::value_type res_pack_pipe;
-        
-        bool fb = in_elem.feedback;
+#ifdef AUTOREG
+    using data_T = typename data_arr_T::data_type;
+    using res_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
+    [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type res_pack_pipe;
 
-        if (in_elem.exit_task){
-            exit_task = true;
-            res_pack_pipe.exit_task = true;
-            res_pipe::write(res_pack_pipe);
-            return;
-        }
-    #else
-        using data_T = data_arr_T;            
-        using res_T = typename ExtractPipeType<res_pipe>::value_type;
-    #endif
+    bool fb = in_elem.feedback;
+
+    if (in_elem.exit_task) {
+        exit_task = true;
+        res_pack_pipe.exit_task = true;
+        res_pipe::write(res_pack_pipe);
+        return;
+    }
+#else
+    using data_T = data_arr_T;
+    using res_T = typename ExtractPipeType<res_pipe>::value_type;
+#endif
 
     // Thresholds
     constexpr int lShiftX = CONFIG_T::pool_width - 1;
@@ -92,14 +93,14 @@ void compute_pool_buffer_1d(const data_arr_T &in_elem,
         }
 
         // Write result to output stream
-    #ifdef AUTOREG
+#ifdef AUTOREG
         res_pack_pipe.data = res_pack;
         res_pack_pipe.exit_task = false;
         res_pack_pipe.feedback = fb;
         res_pipe::write(res_pack_pipe);
-    #else
+#else
         res_pipe::write(res_pack);
-    #endif
+#endif
     }
 
     // Reached end of image
@@ -123,11 +124,11 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void pooling1d_cl_
 #else
     using data_element_T = typename data_arr_T::value_type;
 #endif
-    
+
     using data_window_T = array<data_element_T, CONFIG_T::pool_width * CONFIG_T::n_filt>;
 
 #ifdef AUTOREG
-    while (true){
+    while (true) {
         bool exit_task = 0;
 #endif
 
@@ -144,18 +145,21 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void pooling1d_cl_
     // Read input image
     ReadInputWidth:
         for (int col = 0; col < CONFIG_T::in_width; col++) {
-            compute_pool_buffer_1d<data_arr_T, data_window_T, res_pipe, CONFIG_T>(data_pipe::read(), line_buffer, kernel_window,
-                                                                                pX, sX 
-                                                                                #ifdef AUTOREG
-                                                                                , exit_task
-                                                                                #endif
-                                                                                );
-        #ifdef AUTOREG
-            if (exit_task) break;
-        #endif                                                          
+            compute_pool_buffer_1d<data_arr_T, data_window_T, res_pipe, CONFIG_T>(data_pipe::read(), line_buffer,
+                                                                                  kernel_window, pX, sX
+#ifdef AUTOREG
+                                                                                  ,
+                                                                                  exit_task
+#endif
+            );
+#ifdef AUTOREG
+            if (exit_task)
+                break;
+#endif
         }
 #ifdef AUTOREG
-        if (exit_task) break;
+        if (exit_task)
+            break;
     }
 #endif
 }
@@ -177,35 +181,36 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void pooling1d_cl_
  */
 template <class data_arr_T, class data_window_T, class res_pipe, typename CONFIG_T>
 void compute_pool_buffer_2d(const data_arr_T &in_elem,
-                            #ifdef AUTOREG
+#ifdef AUTOREG
                             nnet::shift_reg<typename data_arr_T::data_type::value_type, CONFIG_T::in_width>
-                            #else
+#else
                             nnet::shift_reg<typename data_arr_T::value_type, CONFIG_T::in_width>
-                            #endif
-                            line_buffer[CONFIG_T::pool_height - 1][CONFIG_T::n_filt],
-                            data_window_T &kernel_window, int &pX, int &pY, int &sX, int &sY                        
-                            #ifdef AUTOREG
-                            , bool &exit_task
-                            #endif
-                            ) {
+#endif
+                                line_buffer[CONFIG_T::pool_height - 1][CONFIG_T::n_filt],
+                            data_window_T &kernel_window, int &pX, int &pY, int &sX, int &sY
+#ifdef AUTOREG
+                            ,
+                            bool &exit_task
+#endif
+) {
 
-    #ifdef AUTOREG
-        using data_T = typename data_arr_T::data_type;
-        using res_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
-        [[intel::fpga_register]]  typename ExtractPipeType<res_pipe>::value_type res_pack_pipe;
+#ifdef AUTOREG
+    using data_T = typename data_arr_T::data_type;
+    using res_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
+    [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type res_pack_pipe;
 
-        bool fb = in_elem.feedback;
+    bool fb = in_elem.feedback;
 
-        if (in_elem.exit_task){
-            exit_task = true;
-            res_pack_pipe.exit_task = true;
-            res_pipe::write(res_pack_pipe);
-            return;
-        }
-    #else
-        using data_T = data_arr_T;            
-        using res_T = typename ExtractPipeType<res_pipe>::value_type;
-    #endif
+    if (in_elem.exit_task) {
+        exit_task = true;
+        res_pack_pipe.exit_task = true;
+        res_pipe::write(res_pack_pipe);
+        return;
+    }
+#else
+    using data_T = data_arr_T;
+    using res_T = typename ExtractPipeType<res_pipe>::value_type;
+#endif
 
     // Thresholds
     static constexpr int lShiftX = CONFIG_T::pool_width - 1;
@@ -218,7 +223,6 @@ void compute_pool_buffer_2d(const data_arr_T &in_elem,
 #else
     nnet::shift_line_buffer_2d<data_T, CONFIG_T>(in_elem, line_buffer, shift_buffer);
 #endif
-
 
     // Step 2 - Kernel shift
     nnet::kernel_shift_2d<data_T, data_window_T, CONFIG_T>(shift_buffer, kernel_window);
@@ -246,14 +250,14 @@ void compute_pool_buffer_2d(const data_arr_T &in_elem,
         }
 
         // Write result to output stream
-    #ifdef AUTOREG
+#ifdef AUTOREG
         res_pack_pipe.data = res_pack;
         res_pack_pipe.exit_task = false;
         res_pack_pipe.feedback = fb;
         res_pipe::write(res_pack_pipe);
-    #else
+#else
         res_pipe::write(res_pack);
-    #endif
+#endif
     }
 
     // Reached end of image
@@ -286,7 +290,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void pooling2d_cl_
     using data_window_T = array<data_element_T, CONFIG_T::pool_height * CONFIG_T::pool_width * CONFIG_T::n_filt>;
 
 #ifdef AUTOREG
-    while (true){
+    while (true) {
         bool exit_task = 0;
 #endif
 
@@ -310,21 +314,25 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void pooling2d_cl_
         ReadInputWidth:
             for (int col = 0; col < CONFIG_T::in_width; col++) {
                 compute_pool_buffer_2d<data_arr_T, data_window_T, res_pipe, CONFIG_T>(data_pipe::read(), line_buffer,
-                                                                                    kernel_window, pX, pY, sX, sY 
-                                                                                #ifdef AUTOREG
-                                                                                    , exit_task
-                                                                                #endif
-                                                                                    );
-            #ifdef AUTOREG
-                if (exit_task) break;
-            #endif
+                                                                                      kernel_window, pX, pY, sX, sY
+#ifdef AUTOREG
+                                                                                      ,
+                                                                                      exit_task
+#endif
+                );
+#ifdef AUTOREG
+                if (exit_task)
+                    break;
+#endif
             }
-        #ifdef AUTOREG
-            if (exit_task) break;
-        #endif
+#ifdef AUTOREG
+            if (exit_task)
+                break;
+#endif
         }
 #ifdef AUTOREG
-        if (exit_task) break;
+        if (exit_task)
+            break;
     }
 #endif
 }
@@ -373,7 +381,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
     using accum_arr_t = array<typename CONFIG_T::accum_t, CONFIG_T::n_filt>;
 
 #ifdef AUTOREG
-    while (true){
+    while (true) {
 #endif
         [[intel::fpga_register]] accum_arr_t data_input;
 
@@ -383,18 +391,18 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
         }
 
         for (int i = 0; i < CONFIG_T::n_in; i++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             data_pipe_T in_data_pipe = data_pipe::read();
             out_data_pipe.feedback = in_data_pipe.feedback;
-            if (in_data_pipe.exit_task){
-                out_data_pipe.exit_task = true; 
+            if (in_data_pipe.exit_task) {
+                out_data_pipe.exit_task = true;
                 res_pipe::write(out_data_pipe);
                 return;
             }
             data_T in_data = in_data_pipe.data;
-        #else
-            data_T in_data = data_pipe::read();
-        #endif
+#else
+        data_T in_data = data_pipe::read();
+#endif
             compute_global_pool<data_T, accum_arr_t, CONFIG_T>(in_data, data_input);
         }
 
@@ -410,14 +418,14 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
                 res_pack[i] = static_cast<typename res_T::value_type>(data_input[i]);
             }
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = res_pack;
         out_data_pipe.exit_task = false;
         out_data_pipe.feedback = fb;
         res_pipe::write(out_data_pipe);
-    #else
-        res_pipe::write(res_pack);
-    #endif
+#else
+    res_pipe::write(res_pack);
+#endif
 #ifdef AUTOREG
     }
 #endif
@@ -442,7 +450,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
     using accum_arr_t = array<typename CONFIG_T::accum_t, CONFIG_T::n_filt>;
 
 #ifdef AUTOREG
-    while (true){
+    while (true) {
 #endif
 
         [[intel::fpga_register]] accum_arr_t data_input;
@@ -454,18 +462,18 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
 
         for (int i = 0; i < CONFIG_T::in_height; i++) {
             for (int j = 0; j < CONFIG_T::in_width; j++) {
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 data_pipe_T in_data_pipe = data_pipe::read();
                 out_data_pipe.feedback = in_data_pipe.feedback;
-                if (in_data_pipe.exit_task){
-                    out_data_pipe.exit_task = true; 
+                if (in_data_pipe.exit_task) {
+                    out_data_pipe.exit_task = true;
                     res_pipe::write(out_data_pipe);
                     return;
                 }
                 data_T in_data = in_data_pipe.data;
-            #else
-                data_T in_data = data_pipe::read();
-            #endif
+#else
+            data_T in_data = data_pipe::read();
+#endif
                 compute_global_pool<data_T, accum_arr_t, CONFIG_T>(in_data, data_input);
             }
         }
@@ -483,14 +491,14 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void global_poolin
                 res_pack[i] = static_cast<typename res_T::value_type>(data_input[i]);
             }
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = res_pack;
         out_data_pipe.exit_task = false;
         out_data_pipe.feedback = fb;
         res_pipe::write(out_data_pipe);
-    #else
-        res_pipe::write(res_pack);
-    #endif
+#else
+    res_pipe::write(res_pack);
+#endif
 #ifdef AUTOREG
     }
 #endif

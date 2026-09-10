@@ -66,9 +66,9 @@ template <typename T, int N> struct shift_reg {
     T read(int pos) { return data[pos]; }
 };
 
-template<class data_T> struct DataPacket {
+template <class data_T> struct DataPacket {
     using data_type = data_T;
-    data_T data = {}; 
+    data_T data; // No initalisation to prevent inefficiencies with large data
     bool exit_task = false;
     bool feedback = false;
 };

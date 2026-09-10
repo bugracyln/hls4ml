@@ -20,7 +20,7 @@ void gru_stream(typename CONFIG_T::weight_t weights, typename CONFIG_T::recurren
 #else
     using data_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_T = typename ExtractPipeType<res_pipe>::value_type;
-#endif 
+#endif
 
     using h_T = array<typename res_T::value_type, CONFIG_T::n_units>;
 
@@ -37,17 +37,18 @@ void gru_stream(typename CONFIG_T::weight_t weights, typename CONFIG_T::recurren
 
 DataPropagation:
 #ifdef AUTOREG
-    while (true){
+    while (true) {
         auto data_pack_pipe = data_pipe::read();
-        if (data_pack_pipe.exit_task){
-            // If we are set to produce the final output, do so just before exiting. Note that 
+        if (data_pack_pipe.exit_task) {
+            // If we are set to produce the final output, do so just before exiting. Note that
             // it is fine to write two elements since all units wait for EOS in autoreg so there
             // will not be a case where where we do 2 writes but only read one on the downstream
             // task_sequence.
             if (!CONFIG_T::return_sequences) {
                 res_T res_pack;
                 #pragma unroll
-                for (int i_pack = 0; i_pack < ressize; i_pack++) res_pack[i_pack] = h[i_pack];
+                for (int i_pack = 0; i_pack < ressize; i_pack++)
+                    res_pack[i_pack] = h[i_pack];
                 res_pack_pipe.data = res_pack;
                 res_pack_pipe.exit_task = false;
                 res_pipe::write(res_pack_pipe);
@@ -79,18 +80,18 @@ DataPropagation:
             for (int i_pack = 0; i_pack < ressize; i_pack++) {
                 res_pack[i_pack] = h[i_pack];
             }
-        #ifdef AUTOREG
+#ifdef AUTOREG
             res_pack_pipe.data = res_pack;
             res_pack_pipe.exit_task = false;
             res_pack_pipe.feedback = data_pack_pipe.feedback;
             res_pipe::write(res_pack_pipe);
-        #else
+#else
             res_pipe::write(res_pack);
-        #endif
+#endif
         }
     }
 
-    // In autoreg we return when we detect EOS instead of here 
+    // In autoreg we return when we detect EOS instead of here
     // so this path is only releavant to normal application
 #ifndef AUTOREG
     if (!CONFIG_T::return_sequences) {
@@ -101,14 +102,14 @@ DataPropagation:
         for (int i_pack = 0; i_pack < ressize; i_pack++) {
             res_pack[i_pack] = h[i_pack];
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         res_pack_pipe.data = res_pack;
         res_pack_pipe.exit_task = false;
         res_pack_pipe.feedback = false;
         res_pipe::write(res_pack_pipe);
-    #else
+#else
         res_pipe::write(res_pack);
-    #endif
+#endif
     }
 #endif
 }

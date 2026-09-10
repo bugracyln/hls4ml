@@ -83,21 +83,21 @@ UpdateBuffer:
  * kernel weights (4) Counter housekeeping - keeps track of current pixel and stride
  */
 template <class data_in_T, class data_window_T, class res_pipe, typename CONFIG_T>
-void compute_output_buffer_1d(
-    const data_in_T &in_elem,
-    #ifdef AUTOREG
-    nnet::shift_reg<typename data_in_T::data_type::value_type,
-    #else
-    nnet::shift_reg<typename data_in_T::value_type,
-    #endif
-    CONFIG_T::pad_left + CONFIG_T::in_width + CONFIG_T::pad_right>
-        line_buffer[CONFIG_T::n_chan],
-    data_window_T &kernel_window, const typename CONFIG_T::weight_t &weights, const typename CONFIG_T::bias_t &biases,
-    int &pX, int &sX
-    #ifdef AUTOREG
-    , bool &exit_task
-    #endif
-    ) {
+void compute_output_buffer_1d(const data_in_T &in_elem,
+#ifdef AUTOREG
+                              nnet::shift_reg<typename data_in_T::data_type::value_type,
+#else
+                              nnet::shift_reg<typename data_in_T::value_type,
+#endif
+                                              CONFIG_T::pad_left + CONFIG_T::in_width + CONFIG_T::pad_right>
+                                  line_buffer[CONFIG_T::n_chan],
+                              data_window_T &kernel_window, const typename CONFIG_T::weight_t &weights,
+                              const typename CONFIG_T::bias_t &biases, int &pX, int &sX
+#ifdef AUTOREG
+                              ,
+                              bool &exit_task
+#endif
+) {
 
 #ifdef AUTOREG
     using data_T = typename data_in_T::data_type;
@@ -105,9 +105,9 @@ void compute_output_buffer_1d(
     using res_T = typename out_pipe_T::data_type;
     bool fb = in_elem.feedback;
 
-    if(in_elem.exit_task){
+    if (in_elem.exit_task) {
         exit_task = true;
-        res_pipe::write(out_pipe_T{{},true,false});
+        res_pipe::write(out_pipe_T{{}, true, false});
         return;
     }
 #else
@@ -136,23 +136,23 @@ void compute_output_buffer_1d(
         [[intel::fpga_register]] res_T res_out;
         dense_resource<data_window_T, res_T, typename CONFIG_T::mult_config>(kernel_window, res_out, weights, biases);
 
-    // Write result to output stream
-    // TODO - CAST LOOP IS USELESS FOR THE TIME BEING ASK IF THIS HAD ANOTHER PURPOSE
-    /*   [[intel::fpga_register]] res_T res_pack;
-    
-    
-    CastLoop:
-        #pragma unroll
-        for (int channel = 0; channel < CONFIG_T::n_filt; channel++) {
-            res_pack[channel] = res_out[channel];
-        }
-    */
-    #ifdef AUTOREG
+// Write result to output stream
+// TODO - CAST LOOP IS USELESS FOR THE TIME BEING ASK IF THIS HAD ANOTHER PURPOSE
+/*   [[intel::fpga_register]] res_T res_pack;
+
+
+CastLoop:
+    #pragma unroll
+    for (int channel = 0; channel < CONFIG_T::n_filt; channel++) {
+        res_pack[channel] = res_out[channel];
+    }
+*/
+#ifdef AUTOREG
         exit_task = false;
-        res_pipe::write({res_out,false,fb});
-    #else 
+        res_pipe::write({res_out, false, fb});
+#else
         res_pipe::write(res_out);
-    #endif
+#endif
     }
 
     // Reached end of image
@@ -196,40 +196,41 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void conv_1d_cl_st
     int sX = 0;
 
 #ifdef AUTOREG
-    while (true){
+    while (true) {
 
-        if constexpr (CONFIG_T::per_item_stream){ // For per-vector stream (used as a dense-like layer)
+        if constexpr (CONFIG_T::per_item_stream) { // For per-vector stream (used as a dense-like layer)
             compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
                 data_pipe::read(), line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
-            if(exit_task) return;
-        }
-        else{ //For autoregressive image stream
+            if (exit_task)
+                return;
+        } else { // For autoregressive image stream
             // Reset for each image
             int pX = 0;
             int sX = 0;
 
-            // Input image left-side padding
-            PaddingLeftWidth:
-                for (int col = 0; col < CONFIG_T::pad_left; col++) {
-                    compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(padds_packet, line_buffer, kernel_window,
-                                                                                            CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
-                }
+        // Input image left-side padding
+        PaddingLeftWidth:
+            for (int col = 0; col < CONFIG_T::pad_left; col++) {
+                compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
+                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
+            }
 
-            // Read input image
-            ReadInputWidth:
-                for (int col = 0; col < CONFIG_T::in_width; col++) {
-                    compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
-                        data_pipe::read(), line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
-                    
-                    if(exit_task) return;
-                }
+        // Read input image
+        ReadInputWidth:
+            for (int col = 0; col < CONFIG_T::in_width; col++) {
+                compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
+                    data_pipe::read(), line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
 
-            // Input image right-side padding
-            PaddingRightWidth:
-                for (int col = 0; col < CONFIG_T::pad_right; col++) {
-                    compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(padds_packet, line_buffer, kernel_window,
-                                                                                            CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
-                }
+                if (exit_task)
+                    return;
+            }
+
+        // Input image right-side padding
+        PaddingRightWidth:
+            for (int col = 0; col < CONFIG_T::pad_right; col++) {
+                compute_output_buffer_1d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
+                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, sX, exit_task);
+            }
         }
     }
 #else

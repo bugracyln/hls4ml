@@ -18,7 +18,18 @@ def to_acfixed(k, b, i, RND, SAT):
     if b == 1:
         # Currently oneAPI ac_fixed requires at least two bits for both signed and unsigned cases
         # Should be fixed in the future once oneAPI supports 1-bit unsigned ac_fixed
+        if k == 1:
+            print(
+                f'Warning: Current variable is 1-bit signed (ac_fixed<1,{i},{k}>)'
+                'Current Altera HLS backend does not support 1 bit types therefore conversion '
+                'of signed 1 bit type to 2 bits will be lossy when widened to 2 bits.'
+            )
+
+        # Widen by assigning the extra bit as the sign bit
         b = 2
+        i += 1
+        k = 1
+
     return f'ac_fixed<{b},{i},{k},AC_{RND},AC_{SAT}>'
 
 

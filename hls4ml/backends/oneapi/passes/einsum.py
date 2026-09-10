@@ -33,9 +33,6 @@ einsum_config_template = """
     // BRAM Contraction Axis
     static const bool contract_dim = {contract_dim};
 
-    // Square Root of KEY_DIM
-    static constexpr {inp0_t} sqrt_dk = {sqrt_dk};
-
     // Layer Sizes
     static const unsigned n_free0 = {n_free0};
     static const unsigned n_free1 = {n_free1};
@@ -85,10 +82,6 @@ class EinsumConfigTemplate(LayerConfigTemplate):
         params['n_contract'] = node.attributes['n_contract']
         params['n_inplace'] = node.attributes['n_inplace']
 
-        # no effect if we are not using causal einsum for MHA
-        params['sqrt_dk'] = 1
-        params['inp0_t'] = 'unsigned'
-
         io_type = node.model.config.get_config_value('IOType')
         streamed = io_type == 'io_stream'
 
@@ -100,11 +93,6 @@ class EinsumConfigTemplate(LayerConfigTemplate):
                 if node.attributes['contract_dim'] == 'embedding':
                     params['n_free0'] = max(1, params['n_free0'] // context_len)
                     params['n_free1'] = max(1, params['n_free1'] // context_len)
-                    params['sqrt_dk'] = params['n_contract'] ** 0.5
-                    ip = node.get_input_variable(node.inputs[0]).type.precision
-                    ip.width = ip.width if ip.width > 1 else 2
-                    sign = 'true' if ip.signed else 'false'
-                    params['inp0_t'] = f'ac_fixed<{ip.width},{ip.integer},{sign},AC_RND,AC_SAT>'
                 else:
                     params['n_contract'] = max(1, params['n_contract'] // context_len)
 
@@ -201,15 +189,15 @@ class EinsumStreamTaskSequenceTemplate(TaskSequenceTemplate):
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         if autoreg_model:
-            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()]
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
 
             if (params['input0_pipe'] in model_inp_names) or (params['input1_pipe'] in model_inp_names):
-                params['input0_pipe'] = "SW_" + params['input0_pipe']
-                params['input1_pipe'] = "SW_" + params['input1_pipe']
-                
-            elif (params['output_pipe'] in model_out_names):
-                params['output_pipe'] = "SW_" + params['output_pipe']
+                params['input0_pipe'] = 'SW_' + params['input0_pipe']
+                params['input1_pipe'] = 'SW_' + params['input1_pipe']
+
+            elif params['output_pipe'] in model_out_names:
+                params['output_pipe'] = 'SW_' + params['output_pipe']
 
         if node.get_attr('data_format') == 'channels_first':
             raise RuntimeError('channels_first not supported on oneAPI')

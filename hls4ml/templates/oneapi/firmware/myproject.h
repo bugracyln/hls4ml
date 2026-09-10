@@ -29,9 +29,9 @@ struct MyProject {
     auto get(sycl::ext::oneapi::experimental::properties_tag) {
         return sycl::ext::oneapi::experimental::properties{
 #ifdef AHLS
-            sycl::ext::altera::experimental::streaming_interface<>/*, sycl::ext::altera::experimental::pipelined<>*/
+            sycl::ext::altera::experimental::streaming_interface<> /*, sycl::ext::altera::experimental::pipelined<>*/
 #else
-            sycl::ext::intel::experimental::streaming_interface<>/*, sycl::ext::intel::experimental::pipelined<>*/
+            sycl::ext::intel::experimental::streaming_interface<> /*, sycl::ext::intel::experimental::pipelined<>*/
 #endif
         };
     }

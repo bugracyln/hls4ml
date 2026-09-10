@@ -16,42 +16,37 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 #endif
 
 AddLoop:
-    #ifdef AUTOREG
-    while (true){
+#ifdef AUTOREG
+    [[intel::initiation_interval(1)]] while (true) {
         [[intel::fpga_register]] auto in_data_pipe1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data_pipe2 = input2_pipe::read();
-        bool fb = in_data_pipe1.feedback || in_data_pipe2.feedback;
-        [[intel::fpga_register]] auto in_data1 = in_data_pipe1.data;
-        [[intel::fpga_register]] auto in_data2 = in_data_pipe2.data;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
-        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
-        if (in_data_pipe1.exit_task || in_data_pipe2.exit_task){
-            out_data_pipe.exit_task = true;
-            res_pipe::write(out_data_pipe);
-            return;
+    AddPack:
+        #pragma unroll
+        for (int j = 0; j < outputSize; j++) {
+            out_data_pipe.data[j] = static_cast<res_pipe_unit_T>(in_data_pipe1.data[j] + in_data_pipe2.data[j]);
         }
-    #else
+
+        out_data_pipe.exit_task = in_data_pipe1.exit_task || in_data_pipe2.exit_task;
+        out_data_pipe.feedback = in_data_pipe1.feedback || in_data_pipe2.feedback;
+        res_pipe::write(out_data_pipe);
+        if (out_data_pipe.exit_task)
+            return;
+#else
     [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem / inputSize; i++) {
 
         [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-    #endif
 
     AddPack:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
             out_data[j] = static_cast<res_pipe_unit_T>(in_data1[j] + in_data2[j]);
         }
-    #ifdef AUTOREG
-        out_data_pipe.data = out_data;
-        out_data_pipe.exit_task = false;
-        out_data_pipe.feedback = fb;
-        res_pipe::write(out_data_pipe);
-    #else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -68,7 +63,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
 SubtractLoop:
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
         [[intel::fpga_register]] auto in_data_pipe1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data_pipe2 = input2_pipe::read();
         bool fb = in_data_pipe1.feedback || in_data_pipe2.feedback;
@@ -77,32 +72,32 @@ SubtractLoop:
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
-        if (in_data_pipe1.exit_task ||in_data_pipe2.exit_task){
+        if (in_data_pipe1.exit_task || in_data_pipe2.exit_task) {
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
             break;
         }
-    #else
+#else
     [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem / inputSize; i++) {
 
         [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-    #endif
+#endif
 
     SubtractPack:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
             out_data[j] = static_cast<res_pipe_unit_T>(in_data1[j] - in_data2[j]);
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         out_data_pipe.feedback = fb;
         res_pipe::write(out_data_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -120,7 +115,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
 MultLoop:
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
         [[intel::fpga_register]] auto in_data_pipe1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data_pipe2 = input2_pipe::read();
         bool fb = in_data_pipe1.feedback || in_data_pipe2.feedback;
@@ -129,32 +124,32 @@ MultLoop:
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
-        if (in_data_pipe1.exit_task ||in_data_pipe2.exit_task){
+        if (in_data_pipe1.exit_task || in_data_pipe2.exit_task) {
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
             break;
         }
-    #else
+#else
     [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem / inputSize; i++) {
 
         [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-    #endif
+#endif
 
     MultPack:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
             out_data[j] = static_cast<res_pipe_unit_T>(in_data1[j] * in_data2[j]);
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         out_data_pipe.feedback = fb;
         res_pipe::write(out_data_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -172,7 +167,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
 AvgLoop:
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
         [[intel::fpga_register]] auto in_data_pipe1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data_pipe2 = input2_pipe::read();
         bool fb = in_data_pipe1.feedback || in_data_pipe2.feedback;
@@ -181,34 +176,33 @@ AvgLoop:
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
-        if (in_data_pipe1.exit_task ||in_data_pipe2.exit_task){
+        if (in_data_pipe1.exit_task || in_data_pipe2.exit_task) {
             out_data_pipe.exit_task = true;
             out_data_pipe.feedback = fb;
             res_pipe::write(out_data_pipe);
             break;
         }
-    #else
+#else
     [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem / inputSize; i++) {
 
         [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-    #endif
+#endif
 
     AvgPack:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
-            out_data[j] = static_cast<res_pipe_unit_T>(
-                (in_data1[j] + in_data2[j]) * ac_fixed<2, 1, false>(0.5));
+            out_data[j] = static_cast<res_pipe_unit_T>((in_data1[j] + in_data2[j]) * ac_fixed<2, 1, false>(0.5));
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         out_data_pipe.feedback = fb;
         res_pipe::write(out_data_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -226,7 +220,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
 MaxLoop:
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
         [[intel::fpga_register]] auto in_data_pipe1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data_pipe2 = input2_pipe::read();
         bool fb = in_data_pipe1.feedback || in_data_pipe2.feedback;
@@ -235,34 +229,33 @@ MaxLoop:
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
-        if (in_data_pipe1.exit_task ||in_data_pipe2.exit_task){
+        if (in_data_pipe1.exit_task || in_data_pipe2.exit_task) {
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
             break;
         }
-    #else
+#else
     [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem / inputSize; i++) {
 
         [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-    #endif
+#endif
 
     MaxPack:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
-            out_data[j] = (in_data1[j] > in_data2[j])
-                              ? static_cast<res_pipe_unit_T>(in_data1[j])
-                              : static_cast<res_pipe_unit_T>(in_data2[j]);
+            out_data[j] = (in_data1[j] > in_data2[j]) ? static_cast<res_pipe_unit_T>(in_data1[j])
+                                                      : static_cast<res_pipe_unit_T>(in_data2[j]);
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         out_data_pipe.feedback = fb;
         res_pipe::write(out_data_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -280,7 +273,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
 MinLoop:
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
         [[intel::fpga_register]] auto in_data_pipe1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data_pipe2 = input2_pipe::read();
         bool fb = in_data_pipe1.feedback || in_data_pipe2.feedback;
@@ -289,34 +282,33 @@ MinLoop:
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data_pipe;
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
 
-        if (in_data_pipe1.exit_task ||in_data_pipe2.exit_task){
+        if (in_data_pipe1.exit_task || in_data_pipe2.exit_task) {
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
             break;
         }
-    #else
+#else
     [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem / inputSize; i++) {
 
         [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
         [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
         [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-    #endif
+#endif
 
     MinPack:
         #pragma unroll
         for (int j = 0; j < outputSize; j++) {
-            out_data[j] = (in_data1[j] < in_data2[j])
-                              ? static_cast<res_pipe_unit_T>(in_data1[j])
-                              : static_cast<res_pipe_unit_T>(in_data2[j]);
+            out_data[j] = (in_data1[j] < in_data2[j]) ? static_cast<res_pipe_unit_T>(in_data1[j])
+                                                      : static_cast<res_pipe_unit_T>(in_data2[j]);
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         out_data_pipe.feedback = fb;
         res_pipe::write(out_data_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -336,72 +328,73 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 #endif
 
 #ifdef AUTOREG
-    while (true) { 
+    [[intel::initiation_interval(1)]] while (true) {
         exit_task = 0;
         bool fb = 0;
 #endif
     ConcatLoop1:
         [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem1_0 / input1Size; i++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             [[intel::fpga_register]] auto in_data1_pipe = input1_pipe::read();
-            if (in_data1_pipe.feedback) fb = true;
+            if (in_data1_pipe.feedback)
+                fb = true;
             [[intel::fpga_register]] auto in_data1 = in_data1_pipe.data;
-            if (in_data1_pipe.exit_task){
+            if (in_data1_pipe.exit_task) {
                 exit_task = true;
                 break;
             }
-        #else
-            [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
-        #endif
-            
+#else
+        [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
+#endif
+
         ConcatPack1:
             #pragma unroll
             for (int j = 0; j < input1Size; j++) {
-                out_data[j + (i * input1Size)] =
-                    static_cast<res_pipe_unit_T>(in_data1[j]);
+                out_data[j + (i * input1Size)] = static_cast<res_pipe_unit_T>(in_data1[j]);
             }
         }
 
     ConcatLoop2:
         [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem2_0 / input2Size; i++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             [[intel::fpga_register]] auto in_data2_pipe = input2_pipe::read();
-            if (in_data2_pipe.feedback) fb = true;
+            if (in_data2_pipe.feedback)
+                fb = true;
             [[intel::fpga_register]] auto in_data2 = in_data2_pipe.data;
-            if (in_data2_pipe.exit_task){
+            if (in_data2_pipe.exit_task) {
                 exit_task = true;
                 break;
             }
-        #else
-            [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
-        #endif
+#else
+        [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
+#endif
 
         ConcatPack2:
             #pragma unroll
             for (int j = 0; j < input2Size; j++) {
-                out_data[j + (i * input2Size) + (CONFIG_T::n_elem1_0)] =
-                    static_cast<res_pipe_unit_T>(in_data2[j]);
+                out_data[j + (i * input2Size) + (CONFIG_T::n_elem1_0)] = static_cast<res_pipe_unit_T>(in_data2[j]);
             }
         }
 
-    #ifdef AUTOREG
-        // We check if there is exit task before writing into pipe so if stop signal is received we write outside the while loop
-        // We dont have if(exit_task) break; between input 1 and 2 to ensure both pipes drain
-        if(exit_task) break;
+#ifdef AUTOREG
+        // We check if there is exit task before writing into pipe so if stop signal is received we write outside the while
+        // loop We dont have if(exit_task) break; between input 1 and 2 to ensure both pipes drain
+        if (exit_task)
+            break;
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         out_data_pipe.feedback = fb;
         res_pipe::write(out_data_pipe);
-    #else
-        res_pipe::write(out_data);
-    #endif
-        
+#else
+    res_pipe::write(out_data);
+#endif
+
 #ifdef AUTOREG
     }
     // Just before exit, pass the stop signal, data contained inside the pipe is irrelevant
     out_data_pipe.exit_task = true;
     res_pipe::write(out_data_pipe);
-#endif 
+#endif
 }
 
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void concatenate2d_0_stream() {
@@ -417,58 +410,59 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 #endif
 
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
         bool exit_task = 0;
         bool fb = 0;
 #endif
 
     ConcatLoopHeight1:
         [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem1_0; i++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             [[intel::fpga_register]] auto in_data1_pipe = input1_pipe::read();
-            if (in_data1_pipe.feedback) fb = true;
+            if (in_data1_pipe.feedback)
+                fb = true;
             [[intel::fpga_register]] auto in_data1 = in_data1_pipe.data;
             [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
             if (in_data1_pipe.exit_task) {
                 exit_task = true;
                 break;
             }
-        #else
-            [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
-            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-        #endif
+#else
+        [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
+        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
+#endif
 
         ConcatPackInput1:
             #pragma unroll
             for (int k = 0; k < input1Size; k++) {
                 out_data[k] = static_cast<res_pipe_unit_T>(in_data1[k]);
             }
-        #ifdef AUTOREG
+#ifdef AUTOREG
             out_data_pipe.data = out_data;
             out_data_pipe.exit_task = false;
             out_data_pipe.feedback = fb;
             res_pipe::write(out_data_pipe);
-        #else
-            res_pipe::write(out_data);
-        #endif
+#else
+        res_pipe::write(out_data);
+#endif
         }
-
 
     ConcatLoopHeight2:
         [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem2_0; i++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             [[intel::fpga_register]] auto in_data2_pipe = input2_pipe::read();
-            if (in_data2_pipe.feedback) fb = true;
+            if (in_data2_pipe.feedback)
+                fb = true;
             [[intel::fpga_register]] auto in_data2 = in_data2_pipe.data;
             [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
             if (in_data2_pipe.exit_task) {
                 exit_task = true;
                 break;
             }
-        #else
-            [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
-            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-        #endif
+#else
+        [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
+        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
+#endif
 
         ConcatPackInput2:
             #pragma unroll
@@ -476,17 +470,18 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
                 out_data[k] = static_cast<res_pipe_unit_T>(in_data2[k]);
             }
 
-        #ifdef AUTOREG
+#ifdef AUTOREG
             out_data_pipe.data = out_data;
             out_data_pipe.exit_task = false;
             out_data_pipe.feedback = fb;
             res_pipe::write(out_data_pipe);
-        #else
-            res_pipe::write(out_data);
-        #endif
+#else
+        res_pipe::write(out_data);
+#endif
         }
 #ifdef AUTOREG
-        if(exit_task) break;
+        if (exit_task)
+            break;
     }
     out_data_pipe.exit_task = true;
     res_pipe::write(out_data_pipe);
@@ -506,29 +501,30 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 #endif
 
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
         bool exit_task = 0;
         bool fb = 0;
 #endif
 
     ConcatLoopHeight:
         [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_elem1_0; i++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             [[intel::fpga_register]] auto in_data1_pipe = input1_pipe::read();
             [[intel::fpga_register]] auto in_data2_pipe = input2_pipe::read();
-            if (in_data1_pipe.feedback || in_data2_pipe.feedback) fb = true;
+            if (in_data1_pipe.feedback || in_data2_pipe.feedback)
+                fb = true;
             [[intel::fpga_register]] auto in_data1 = in_data1_pipe.data;
             [[intel::fpga_register]] auto in_data2 = in_data2_pipe.data;
             [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
-            if (in_data1_pipe.exit_task || in_data2_pipe.exit_task){
-                exit_task = true; 
+            if (in_data1_pipe.exit_task || in_data2_pipe.exit_task) {
+                exit_task = true;
                 break;
             }
-        #else
-            [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
-            [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
-            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-        #endif
+#else
+        [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
+        [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
+        [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
+#endif
 
         ConcatPackInput1:
             #pragma unroll
@@ -541,15 +537,16 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             for (int k = 0; k < input2Size; k++) {
                 out_data[input1Size + k] = static_cast<res_pipe_unit_T>(in_data2[k]);
             }
-        #ifdef AUTOREG
-            if(exit_task) break;
+#ifdef AUTOREG
+            if (exit_task)
+                break;
             out_data_pipe.data = out_data;
             out_data_pipe.exit_task = false;
             out_data_pipe.feedback = fb;
             res_pipe::write(out_data_pipe);
-        #else
-            res_pipe::write(out_data);
-        #endif
+#else
+        res_pipe::write(out_data);
+#endif
         }
 #ifdef AUTOREG
     }
@@ -579,7 +576,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 #endif
 
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
         bool exit_task = 0;
         bool fb = 0;
 #endif
@@ -588,19 +585,20 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
         ConcatLoopWidth1:
             [[intel::initiation_interval(1)]] for (int j = 0; j < CONFIG_T::n_elem1_1; j++) {
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 [[intel::fpga_register]] auto in_data1_pipe = input1_pipe::read();
-                if (in_data1_pipe.feedback) fb = true;
+                if (in_data1_pipe.feedback)
+                    fb = true;
                 [[intel::fpga_register]] auto in_data1 = in_data1_pipe.data;
                 [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
                 if (in_data1_pipe.exit_task) {
                     exit_task = true;
                     break;
                 }
-            #else
-                [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
-                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-            #endif
+#else
+            [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
+            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
+#endif
 
             ConcatPackInput1:
                 #pragma unroll
@@ -608,18 +606,19 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
                     out_data[k] = static_cast<res_pipe_unit_T>(in_data1[k]);
                 }
 
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 out_data_pipe.data = out_data;
                 out_data_pipe.exit_task = false;
                 out_data_pipe.feedback = fb;
                 res_pipe::write(out_data_pipe);
-            #else
-                res_pipe::write(out_data);
-            #endif
+#else
+            res_pipe::write(out_data);
+#endif
             }
-        #ifdef AUTOREG
-            if(exit_task) break;
-        #endif
+#ifdef AUTOREG
+            if (exit_task)
+                break;
+#endif
         }
 
     ConcatLoopHeight2:
@@ -627,19 +626,20 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 
         ConcatLoopWidth2:
             [[intel::initiation_interval(1)]] for (int j = 0; j < CONFIG_T::n_elem2_1; j++) {
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 [[intel::fpga_register]] auto in_data2_pipe = input2_pipe::read();
-                if (in_data2_pipe.feedback) fb = true;
+                if (in_data2_pipe.feedback)
+                    fb = true;
                 [[intel::fpga_register]] auto in_data2 = in_data2_pipe.data;
                 [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
                 if (in_data2_pipe.exit_task) {
                     exit_task = true;
                     break;
                 }
-            #else
-                [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
-                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-            #endif
+#else
+            [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
+            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
+#endif
 
             ConcatPackInput2:
                 #pragma unroll
@@ -647,21 +647,23 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
                     out_data[k] = static_cast<res_pipe_unit_T>(in_data2[k]);
                 }
 
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 out_data_pipe.data = out_data;
                 out_data_pipe.exit_task = false;
                 out_data_pipe.feedback = fb;
                 res_pipe::write(out_data_pipe);
-            #else
-                res_pipe::write(out_data);
-            #endif
+#else
+            res_pipe::write(out_data);
+#endif
             }
-        #ifdef AUTOREG
-            if(exit_task) break;
-        #endif
+#ifdef AUTOREG
+            if (exit_task)
+                break;
+#endif
         }
 #ifdef AUTOREG
-        if(exit_task) break;
+        if (exit_task)
+            break;
     }
     out_data_pipe.exit_task = true;
     res_pipe::write(out_data_pipe);
@@ -681,7 +683,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 #endif
 
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
         bool exit_task = 0;
         bool fb = 0;
 #endif
@@ -689,51 +691,52 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
         for (int i = 0; i < CONFIG_T::n_elem1_0; i++) {
         ConcatLoopWidth1:
             [[intel::initiation_interval(1)]] for (int j = 0; j < CONFIG_T::n_elem1_1; j++) {
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 [[intel::fpga_register]] auto in_data1_pipe = input1_pipe::read();
-                if (in_data1_pipe.feedback) fb = true;
+                if (in_data1_pipe.feedback)
+                    fb = true;
                 [[intel::fpga_register]] auto in_data1 = in_data1_pipe.data;
                 [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
                 if (in_data1_pipe.exit_task) {
                     exit_task = true;
                     break;
                 }
-            #else
-                [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
-                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-            #endif
-
+#else
+            [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
+            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
+#endif
 
             ConcatPackInput1:
                 #pragma unroll
                 for (int k = 0; k < input1Size; k++) {
                     out_data[k] = static_cast<res_pipe_unit_T>(in_data1[k]);
                 }
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 out_data_pipe.data = out_data;
                 out_data_pipe.exit_task = false;
                 out_data_pipe.feedback = fb;
                 res_pipe::write(out_data_pipe);
-            #else
-                res_pipe::write(out_data);
-            #endif
+#else
+            res_pipe::write(out_data);
+#endif
             }
 
         ConcatLoopWidth2:
             [[intel::initiation_interval(1)]] for (int j = 0; j < CONFIG_T::n_elem2_1; j++) {
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 [[intel::fpga_register]] auto in_data2_pipe = input2_pipe::read();
-                if (in_data2_pipe.feedback) fb = true;
+                if (in_data2_pipe.feedback)
+                    fb = true;
                 [[intel::fpga_register]] auto in_data2 = in_data2_pipe.data;
                 [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
                 if (in_data2_pipe.exit_task) {
                     exit_task = true;
                     break;
                 }
-            #else
-                [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
-                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-            #endif
+#else
+            [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
+            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
+#endif
 
             ConcatPackInput2:
                 #pragma unroll
@@ -741,26 +744,27 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
                     out_data[k] = static_cast<res_pipe_unit_T>(in_data2[k]);
                 }
 
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 out_data_pipe.data = out_data;
                 out_data_pipe.exit_task = false;
                 out_data_pipe.feedback = fb;
                 res_pipe::write(out_data_pipe);
-            #else
-                res_pipe::write(out_data);
-            #endif
+#else
+            res_pipe::write(out_data);
+#endif
             }
-        #ifdef AUTOREG
-            if (exit_task) break;
-        #endif
+#ifdef AUTOREG
+            if (exit_task)
+                break;
+#endif
         }
 #ifdef AUTOREG
-        if(exit_task) break;
+        if (exit_task)
+            break;
     }
     out_data_pipe.exit_task = true;
     res_pipe::write(out_data_pipe);
 #endif
-    
 }
 
 template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_T> void concatenate3d_2_stream() {
@@ -776,7 +780,7 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
 #endif
 
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
         bool exit_task = 0;
         bool fb = 0;
 #endif
@@ -784,22 +788,23 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
         for (int i = 0; i < CONFIG_T::n_elem1_0; i++) {
         ConcatLoopWidth:
             [[intel::initiation_interval(1)]] for (int j = 0; j < CONFIG_T::n_elem1_1; j++) {
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 [[intel::fpga_register]] auto in_data1_pipe = input1_pipe::read();
                 [[intel::fpga_register]] auto in_data2_pipe = input2_pipe::read();
-                if (in_data1_pipe.feedback || in_data2_pipe.feedback) fb = true;
+                if (in_data1_pipe.feedback || in_data2_pipe.feedback)
+                    fb = true;
                 [[intel::fpga_register]] auto in_data1 = in_data1_pipe.data;
                 [[intel::fpga_register]] auto in_data2 = in_data2_pipe.data;
                 [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type::data_type out_data;
-                if (in_data1_pipe.exit_task || in_data2_pipe.exit_task){
-                    exit_task = true; 
+                if (in_data1_pipe.exit_task || in_data2_pipe.exit_task) {
+                    exit_task = true;
                     break;
                 }
-            #else
-                [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
-                [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
-                [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
-            #endif
+#else
+            [[intel::fpga_register]] auto in_data1 = input1_pipe::read();
+            [[intel::fpga_register]] auto in_data2 = input2_pipe::read();
+            [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type out_data;
+#endif
 
             ConcatPackInput1:
                 #pragma unroll
@@ -810,24 +815,25 @@ template <class input1_pipe, class input2_pipe, class res_pipe, typename CONFIG_
             ConcatPackInput2:
                 #pragma unroll
                 for (int k = 0; k < input2Size; k++) {
-                    out_data[input1Size + k] =
-                        static_cast<res_pipe_unit_T>(in_data2[k]);
+                    out_data[input1Size + k] = static_cast<res_pipe_unit_T>(in_data2[k]);
                 }
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 out_data_pipe.data = out_data;
                 out_data_pipe.exit_task = false;
                 out_data_pipe.feedback = fb;
                 res_pipe::write(out_data_pipe);
-            #else
-                res_pipe::write(out_data);
-            #endif
+#else
+            res_pipe::write(out_data);
+#endif
             }
-        #ifdef AUTOREG
-            if (exit_task) break;
-        #endif
+#ifdef AUTOREG
+            if (exit_task)
+                break;
+#endif
         }
 #ifdef AUTOREG
-        if (exit_task) break;
+        if (exit_task)
+            break;
     }
     out_data_pipe.exit_task = true;
     res_pipe::write(out_data_pipe);

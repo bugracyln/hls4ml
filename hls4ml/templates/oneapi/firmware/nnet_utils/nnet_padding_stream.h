@@ -10,7 +10,7 @@ template <class res_pipe, typename CONFIG_T> inline void fill_zero() {
 #else
     [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type res_part;
 #endif
-    
+
     #pragma unroll
     for (int i = 0; i < CONFIG_T::n_chan; i++) {
         res_part[i] = 0;
@@ -24,16 +24,17 @@ template <class res_pipe, typename CONFIG_T> inline void fill_zero() {
 #endif
 }
 
-template <class data_pipe, class res_pipe, typename CONFIG_T> inline void fill_data(
-    #ifdef AUTOREG
+template <class data_pipe, class res_pipe, typename CONFIG_T>
+inline void fill_data(
+#ifdef AUTOREG
     bool &exit_task
-    #endif
+#endif
 ) {
     [[intel::fpga_register]] auto data_part = data_pipe::read();
     [[intel::fpga_register]] typename ExtractPipeType<res_pipe>::value_type res_part;
 
 #ifdef AUTOREG
-    if(data_part.exit_task){
+    if (data_part.exit_task) {
         res_part.exit_task = true;
         exit_task = true;
         res_pipe::write(res_part);
@@ -44,19 +45,19 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> inline void fill_d
 
     #pragma unroll
     for (int i = 0; i < CONFIG_T::n_chan; i++) {
-    #ifdef AUTOREG
+#ifdef AUTOREG
         res_part.data[i] = data_part.data[i];
-    #else
+#else
         res_part[i] = data_part[i];
-    #endif
+#endif
     }
     res_pipe::write(res_part);
 }
 
 template <class data_pipe, class res_pipe, typename CONFIG_T> void zeropad1d_cl_stream() {
 #ifdef AUTOREG
- while (true){
-    bool exit_task = 0;
+    while (true) {
+        bool exit_task = 0;
 #endif
 
     PadLeft:
@@ -67,17 +68,19 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void zeropad1d_cl_
     CopyMain:
         for (int i = 0; i < CONFIG_T::in_width; i++) {
             fill_data<data_pipe, res_pipe, CONFIG_T>(
-        #ifdef AUTOREG
-            exit_task
-        #endif
+#ifdef AUTOREG
+                exit_task
+#endif
             );
-        #ifdef AUTOREG
-            if (exit_task) break;
-        #endif
+#ifdef AUTOREG
+            if (exit_task)
+                break;
+#endif
         }
-    #ifdef AUTOREG
-        if (exit_task) break;
-    #endif
+#ifdef AUTOREG
+        if (exit_task)
+            break;
+#endif
 
     PadRight:
         for (int i = 0; i < CONFIG_T::pad_right; i++) {
@@ -113,26 +116,29 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void zeropad2d_cl_
         CopyMain:
             for (int j = 0; j < CONFIG_T::in_width; j++) {
                 fill_data<data_pipe, res_pipe, CONFIG_T>(
-            #ifdef AUTOREG
-                exit_task
-            #endif
+#ifdef AUTOREG
+                    exit_task
+#endif
                 );
-            #ifdef AUTOREG
-                if (exit_task) break;
-            #endif
+#ifdef AUTOREG
+                if (exit_task)
+                    break;
+#endif
             }
-        #ifdef AUTOREG
-            if (exit_task) break;
-        #endif
+#ifdef AUTOREG
+            if (exit_task)
+                break;
+#endif
 
         PadRight:
             for (int j = 0; j < CONFIG_T::pad_right; j++) {
                 fill_zero<res_pipe, CONFIG_T>();
             }
         }
-    #ifdef AUTOREG
-        if (exit_task) break;
-    #endif
+#ifdef AUTOREG
+        if (exit_task)
+            break;
+#endif
 
     PadBottom:
         for (int i = 0; i < CONFIG_T::pad_bottom; i++) {

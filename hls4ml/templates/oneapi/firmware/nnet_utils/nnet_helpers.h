@@ -43,11 +43,11 @@ constexpr unsigned floor_log2(unsigned x) {
         x >>= 1;
         res++;
     }
-    return res-1;
+    return res - 1;
 }
 
 // This func takes the input size and rounds to nearest power of 2
-constexpr unsigned numbanks_round(unsigned x){
+constexpr unsigned numbanks_round(unsigned x) {
     unsigned p = floor_log2(x);
     return 1 << p;
 }

@@ -108,59 +108,137 @@ Store:
     }
 }
 
-// NEEDS EDGE CASE HANDLING LIKE SAY RF = 5
 template <class data_T, class res_T, typename CONFIG_T>
 void dense_rf_lt(const data_T &data, res_T &res, const typename CONFIG_T::weight_t &weights,
-                 const typename CONFIG_T::bias_t &biases) {
+                 const typename CONFIG_T::bias_t &biases, unsigned head_offset = 0) {
 
     assert((CONFIG_T::multiplier_limit % CONFIG_T::n_out == 0 || CONFIG_T::reuse_factor >= CONFIG_T::n_in) &&
            "The current Reuse Factor is not allowed");
 
     assert((CONFIG_T::multiplier_limit == CONFIG_T::block_factor) && "This function is correct only for RF <= N_IN");
 
-    // Declared as memory to avoid state feedback issues
-    [[intel::fpga_memory]] typename CONFIG_T::accum_t acc[CONFIG_T::n_out];
+    constexpr unsigned N_LANES = CONFIG_T::num_lanes;                   // ceil(n_in/reuse_factor)
+    constexpr unsigned N_PASSES = DIV_ROUNDUP(CONFIG_T::n_in, N_LANES); // <= reuse_factor (prevents dropping values)
+    constexpr unsigned LAST_LANE_ADDR = N_LANES * (N_PASSES - 1);
+    constexpr unsigned OVERFLOW_ADDRS = CONFIG_T::n_in - LAST_LANE_ADDR;
 
-    unsigned w_offset = 0;
-    unsigned data_offset = 0;
-    constexpr unsigned N_BANKS = CONFIG_T::num_banks;    // overestimated val//CONFIG_T::n_in/CONFIG_T::reuse_factor;
-    //constexpr unsigned BANK_SIZE = CONFIG_T::n_out/N_BANKS;
-    [[intel::nofusion, intel::speculated_iterations(0)]] // each reuse loop is seperate
-    for (unsigned reuse_unit = 0; reuse_unit < CONFIG_T::reuse_factor; reuse_unit++) {
-        data_offset = N_BANKS * reuse_unit;
-        for (unsigned el = 0; el < CONFIG_T::n_out; el++) {
-            w_offset = N_BANKS * reuse_unit + CONFIG_T::n_in * el;
-            if (reuse_unit == 0)
-                acc[el] = biases[el];
-            #pragma unroll
-            for (unsigned i = 0; i < N_BANKS; i++) {
-                unsigned d_idx = data_offset + i;
-                //if (d_idx >= BANK_SIZE) continue; 
-                acc[el] += data[d_idx] * weights[w_offset + i];
+    if constexpr (CONFIG_T::argmax) {
+
+        static_assert(std::tuple_size<res_T>{} == 1, "argmax must return a size 1 array");
+        typename CONFIG_T::accum_t maxval = minval<typename CONFIG_T::accum_t>();
+        unsigned idx = 0;
+
+        [[intel::fpga_memory]] typename CONFIG_T::accum_t acc[(N_PASSES > 1) ? CONFIG_T::n_out : 1];
+        Op_add<typename CONFIG_T::accum_t> op_add;
+        unsigned w_base = CONFIG_T::n_in * head_offset;
+
+        [[intel::nofusion, intel::speculated_iterations(0)]] // each reuse loop is seperate
+        for (unsigned reuse_unit = 0; reuse_unit < N_PASSES; reuse_unit++) {
+
+            unsigned data_offset = N_LANES * reuse_unit;
+            unsigned w_offset = w_base + data_offset;
+            bool last = (reuse_unit == N_PASSES - 1);
+
+            for (unsigned el = 0; el < CONFIG_T::n_out; el++) {
+
+                [[intel::fpga_register]] typename CONFIG_T::accum_t prod[N_LANES];
+
+                #pragma unroll
+                for (unsigned i = 0; i < N_LANES; i++) {
+
+                    bool calculate = (i < OVERFLOW_ADDRS) || (!last);
+
+                    prod[i] = calculate ? CONFIG_T::template product<
+                                              typename data_T::value_type,
+                                              typename CONFIG_T::weight_t::value_type>::product(data[data_offset + i],
+                                                                                                weights[w_offset + i])
+                                        : 0;
+                }
+
+                auto partial = reduce<typename CONFIG_T::accum_t, N_LANES, Op_add<typename CONFIG_T::accum_t>>(prod, op_add);
+
+                typename CONFIG_T::accum_t total;
+                if constexpr (N_PASSES == 1) {
+                    total = (typename CONFIG_T::accum_t)(partial + biases[el + head_offset]);
+                } else {
+                    total = (reuse_unit == 0) ? (typename CONFIG_T::accum_t)(partial + biases[el + head_offset])
+                                              : (typename CONFIG_T::accum_t)(partial + acc[el]);
+                    if (!last)
+                        acc[el] = total;
+                }
+
+                if (last && total > maxval) {
+                    maxval = total;
+                    idx = el;
+                }
+                w_offset += CONFIG_T::n_in;
+            }
+        }
+        res[0] = static_cast<typename res_T::value_type>(idx);
+    } else {
+
+        constexpr unsigned N_OUT = std::tuple_size<res_T>{};
+        [[intel::fpga_memory]] typename CONFIG_T::accum_t acc[(N_PASSES > 1) ? N_OUT : 1];
+        Op_add<typename CONFIG_T::accum_t> op_add;
+        unsigned w_base = CONFIG_T::n_in * head_offset;
+
+        [[intel::nofusion, intel::speculated_iterations(0)]] // each reuse loop is seperate
+        for (unsigned reuse_unit = 0; reuse_unit < N_PASSES; reuse_unit++) {
+
+            unsigned data_offset = N_LANES * reuse_unit;
+            unsigned w_offset = w_base + data_offset;
+            bool last = (reuse_unit == N_PASSES - 1);
+
+            for (unsigned el = 0; el < N_OUT; el++) {
+
+                [[intel::fpga_register]] typename CONFIG_T::accum_t prod[N_LANES];
+
+                #pragma unroll
+                for (unsigned i = 0; i < N_LANES; i++) {
+
+                    bool calculate = (i < OVERFLOW_ADDRS) || (!last);
+
+                    prod[i] = calculate ? CONFIG_T::template product<
+                                              typename data_T::value_type,
+                                              typename CONFIG_T::weight_t::value_type>::product(data[data_offset + i],
+                                                                                                weights[w_offset + i])
+                                        : 0;
+                }
+
+                auto partial = reduce<typename CONFIG_T::accum_t, N_LANES, Op_add<typename CONFIG_T::accum_t>>(prod, op_add);
+
+                typename CONFIG_T::accum_t total;
+                if constexpr (N_PASSES == 1) {
+                    total = (typename CONFIG_T::accum_t)(partial + biases[el + head_offset]);
+                } else {
+                    total = (reuse_unit == 0) ? (typename CONFIG_T::accum_t)(partial + biases[el + head_offset])
+                                              : (typename CONFIG_T::accum_t)(partial + acc[el]);
+                    if (!last)
+                        acc[el] = total;
+                }
+
+                if (last)
+                    res[el] = cast<typename data_T::value_type, typename res_T::value_type, CONFIG_T>(total);
+                w_offset += CONFIG_T::n_in;
             }
         }
     }
-
-// Cast to "res_t" type
-Result:
-    #pragma unroll CONFIG_T::num_banks
-    for (int ires = 0; ires < CONFIG_T::n_out; ires++) {
-        res[ires] = cast<typename data_T::value_type, typename res_T::value_type, CONFIG_T>(acc[ires]);
-    }
 }
 
-template <class data_T, class res_T, typename CONFIG_T> void dense_resource(const data_T &data, res_T &res) {
+template <class data_T, class res_T, typename CONFIG_T>
+void dense_resource(const data_T &data, res_T &res, unsigned kernel_offset = 0) {
     if (CONFIG_T::reuse_factor <= CONFIG_T::n_in) {
-        dense_rf_lt<data_T, res_T, CONFIG_T>(data, res, CONFIG_T::weights, CONFIG_T::biases);
+        dense_rf_lt<data_T, res_T, CONFIG_T>(data, res, CONFIG_T::weights, CONFIG_T::biases, kernel_offset);
     } else {
         dense_rf_gt<data_T, res_T, CONFIG_T>(data, res, CONFIG_T::weights, CONFIG_T::biases);
     }
 }
+
 template <class data_T, class res_T, typename CONFIG_T>
 void dense_resource(const data_T &data, res_T &res, const typename CONFIG_T::weight_t &weights,
-                    const typename CONFIG_T::bias_t &biases) {
+                    const typename CONFIG_T::bias_t &biases, unsigned kernel_offset = 0) {
     if (CONFIG_T::reuse_factor <= CONFIG_T::n_in) {
-        dense_rf_lt<data_T, res_T, CONFIG_T>(data, res, weights, biases);
+        dense_rf_lt<data_T, res_T, CONFIG_T>(data, res, weights, biases, kernel_offset);
     } else {
         dense_rf_gt<data_T, res_T, CONFIG_T>(data, res, weights, biases);
     }

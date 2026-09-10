@@ -240,7 +240,8 @@ class OneAPIStaticWeightVariableDefinition(VariableDefinition):
         """Write the appropriate weight definiiton"""
         # first determine whether to store in register or bram (heuristic)
         if reuse_factor == 1 or self.data_length < 2048 or self.type.precision.width < 3:
-            attribute = '[[intel::fpga_register]]' #TODO - CHECK THIS WE MIGH NEED TO DROP THE FPGA_REGISTER ATTRIB FOR BETTER COMPILE
+            # TODO - CHECK THIS WE MIGH NEED TO DROP THE FPGA_REGISTER ATTRIB FOR BETTER COMPILE
+            attribute = '[[intel::fpga_register]]'
         else:
             # revisit this heuristic
             nbanks = int(2 ** np.ceil(np.log2(self.data_length)) / 2)

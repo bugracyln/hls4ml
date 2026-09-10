@@ -1,4 +1,5 @@
 import shutil
+
 from hls4ml.backends.backend import get_backend
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
 from hls4ml.backends.template import FunctionCallTemplate, LayerConfigTemplate
@@ -72,19 +73,19 @@ class MergeTaskSequenceTemplate(TaskSequenceTemplate):
         if max_invoc is not None:
             self.template = merge_task_sequence_template_max_invoc
             params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
-        
+
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         if autoreg_model:
-            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()]
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
 
             if (params['input1_pipe'] in model_inp_names) or (params['input2_pipe'] in model_inp_names):
-                params['input1_pipe'] = "SW_" + params['input1_pipe']
-                params['input2_pipe'] = "SW_" + params['input2_pipe']
-                
-            elif (params['output_pipe'] in model_out_names):
-                params['output_pipe'] = "SW_" + params['output_pipe']
+                params['input1_pipe'] = 'SW_' + params['input1_pipe']
+                params['input2_pipe'] = 'SW_' + params['input2_pipe']
+
+            elif params['output_pipe'] in model_out_names:
+                params['output_pipe'] = 'SW_' + params['output_pipe']
 
         return self.template.format(**params)
 

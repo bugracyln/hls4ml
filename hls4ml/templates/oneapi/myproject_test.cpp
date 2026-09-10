@@ -33,6 +33,50 @@
 
 #define CHECKPOINT 5000
 
+template <class data_T> void read_input(std::string inp_name, std::string directory, size_t n_elems, data_T *inp_array) {
+    std::ifstream inp_data(directory);
+    if (inp_data.is_open()) {
+        std::cout << "Reading " << inp_name << std::endl;
+        std::string iline;
+        if (!std::getline(inp_data, iline)) {
+            std::cout << "Warning: file empty, default zero-initialised data will be used." << std::endl;
+            for (size_t i = 0; i < n_elems; i++) {
+                inp_array[i] = static_cast<data_T>(0);
+            }
+        }
+
+        std::stringstream ssin(iline);
+        std::string element;
+
+        size_t i = 0;
+        bool short_warn = false;
+        for (; i < n_elems; i++) {
+            if (std::getline(ssin, element, ','))
+                inp_array[i] = static_cast<data_T>(std::stoi(element));
+            else {
+                if (!short_warn) {
+                    short_warn = true;
+                    std::cout << "Warning: input was shorter than expected; padding with zeros." << std::endl;
+                }
+                inp_array[i] = static_cast<data_T>(0);
+            }
+        }
+        if (i == n_elems && std::getline(ssin, element, ',')) {
+            std::cout << "Warning: maximum of " << n_elems
+                      << " inputs reached, "
+                         "remaining values will not be read."
+                      << std::endl;
+        } else {
+            std::cout << "INFO: Successfully copied inputs from the file." << std::endl;
+        }
+    } else {
+        std::cout << "Warning: file was not found, if this was unintentional "
+                     "make sure you are calling the executable from the directory "
+                     "of the input data, otherwise default zero-initialised data will be used."
+                  << std::endl;
+    }
+}
+
 int main(int argc, char **argv) {
 
 #ifdef AHLS
@@ -96,7 +140,7 @@ int main(int argc, char **argv) {
 
 #ifdef HOST_READS
 
-    // hls-fpga-machine-learning crete host mems
+    // hls-fpga-machine-learning create host mems
 
     volatile uint32_t *ttft_flag = sycl::malloc_shared<uint32_t>(1, q);
     if (ttft_flag == nullptr) {
@@ -112,8 +156,9 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    std::cout << "INFO: Using a pre-determined input sequence, performing " << num_iterations << " independent tests."
-              << std::endl;
+    // hls-fpga-machine-learning read inputs
+
+    std::cout << "Performing " << num_iterations << " independent tests." << std::endl;
 
     std::chrono::high_resolution_clock::time_point first_token_time;
     double average_ts = 0;
@@ -122,12 +167,11 @@ int main(int argc, char **argv) {
     double first_ts = 0;
     double first_ttft = 0;
 
-    // hls-fpga-machine-learning fill inputs
-
     for (int iteration = 0; iteration < num_iterations; iteration++) {
 
-        // Reset the timing flag
+        // Host side reset of ttft_flag and tx_counter for a new test run
         *ttft_flag = 0;
+        *tx_counter = 0;
 
         // Start timer
         auto start = std::chrono::high_resolution_clock::now();
@@ -153,7 +197,7 @@ int main(int argc, char **argv) {
         average_ts = iteration > 0 ? ((average_ts * iteration + ts) / (iteration + 1)) : ts;
         average_ttft = iteration > 0 ? ((average_ttft * iteration + ttft) / (iteration + 1)) : ttft;
         average_tx = iteration > 0 ? ((average_tx * iteration + num_tokens) / (iteration + 1)) : num_tokens;
-        std::cout << "Tx this run: " << num_tokens << std::endl; 
+        std::cout << "Tx this run: " << num_tokens << std::endl;
         std::cout << "Current TTFT (ms): " << ttft << std::endl;
         std::cout << "Current Tokens/s: " << ts << std::endl;
 

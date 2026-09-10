@@ -6,8 +6,8 @@
 #else
 #include <sycl/ext/intel/fpga_extensions.hpp>
 #endif
-#include <sycl/sycl.hpp>
 #include "nnet_utils/nnet_printf.h"
+#include <sycl/sycl.hpp>
 
 // This file defines the methods to transfer the data to the kernel. In the HLS flow,
 // these are really part of the testbench. However, in the accelerator (BSP) flow, they are
@@ -58,15 +58,15 @@ template <class src_T, class Pipe> struct SrcPipePair {
     sycl::ext::oneapi::experimental::annotated_arg<
         src_T *,
         decltype(sycl::ext::oneapi::experimental::properties{
-        #ifdef AHLS
+#ifdef AHLS
             sycl::ext::altera::experimental::latency<0>, sycl::ext::altera::experimental::dwidth<16>,
             sycl::ext::altera::experimental::buffer_location<kInputBufferLocation>,
             sycl::ext::altera::experimental::read_write_mode_read, sycl::ext::altera::experimental::wait_request_requested})>
-        #else
+#else
             sycl::ext::intel::experimental::latency<0>, sycl::ext::intel::experimental::dwidth<16>,
             sycl::ext::intel::experimental::buffer_location<kInputBufferLocation>,
             sycl::ext::intel::experimental::read_write_mode_read, sycl::ext::intel::experimental::wait_request_requested})>
-        #endif
+#endif
         src;
 #else
     src_T *const src;
@@ -111,33 +111,33 @@ template <class... SrcPipePairs> struct DMA_convert_data : SrcPipePairs... {
 };
 
 template <class src_T, class dest_pipe> struct DMA_convert_data_single {
-#if !defined(IS_BSP)
+#ifndef USM_MEMORY
     // When targeting a device family, we instantiate an Avalon Memory Mapped Host for
     // data transaction between host and the DMA kernel during emulation and simulation.
     sycl::ext::oneapi::experimental::annotated_arg<
         src_T *,
         decltype(sycl::ext::oneapi::experimental::properties{
-        #ifdef AHLS
+#ifdef AHLS
             sycl::ext::altera::experimental::latency<0>, sycl::ext::altera::experimental::dwidth<16>,
             sycl::ext::altera::experimental::buffer_location<kInputBufferLocation>,
             sycl::ext::altera::experimental::read_write_mode_read, sycl::ext::altera::experimental::wait_request_requested
-        #else
+#else
             sycl::ext::intel::experimental::latency<0>, sycl::ext::intel::experimental::dwidth<16>,
             sycl::ext::intel::experimental::buffer_location<kInputBufferLocation>,
             sycl::ext::intel::experimental::read_write_mode_read, sycl::ext::intel::experimental::wait_request_requested
-        #endif
+#endif
         })>
 #else
     // When targeting oneAPI BSP, we can use USM pointer to access host memory.
     src_T *const
 #endif
-    src;
+        src;
 
     size_t num_iteration;
 
     [[intel::kernel_args_restrict]] void operator()() const {
 
-#if defined(IS_BSP)
+#ifndef USM_MEMORY
         // Access data using host pointer.
         sycl::ext::altera::host_ptr<src_T> src_ptr(src);
 #else
@@ -147,14 +147,14 @@ template <class src_T, class dest_pipe> struct DMA_convert_data_single {
         // First, extract the PipeDataT from the pipe
         using PipeDataType = typename nnet::ExtractPipeType<dest_pipe>::value_type;
         // By definition, both must have the same size
-	    constexpr auto dstTypeSize = std::tuple_size<PipeDataType>{};
+        constexpr auto dstTypeSize = std::tuple_size<PipeDataType>{};
 
         [[intel::fpga_register]] PipeDataType packet;
 
         // Keep sending data to the input layer and keep the kernels running.
         for (size_t i = 0; i < num_iteration; i++) {
-            
-	        #pragma unroll
+
+            #pragma unroll
             for (size_t j = 0; j < dstTypeSize; j++) {
                 packet[j] = src_ptr[i * dstTypeSize + j];
             }
@@ -163,25 +163,24 @@ template <class src_T, class dest_pipe> struct DMA_convert_data_single {
     }
 };
 
-
 // Symmetrical to the DMA_convert_data above, this DMA drains the output pipe and
 // writes result to memory.
 template <class src_pipe, class dst_T, class ttft_flag_T, class txct_T> struct DMA_convert_data_back {
-#if !defined(IS_BSP)
+#ifndef USM_MEMORY
     // Without BSP, instantiate an Avalon Memory Mapped Host to write to host.
     sycl::ext::oneapi::experimental::annotated_arg<
         dst_T *, decltype(sycl::ext::oneapi::experimental::properties{
-                #ifdef AHLS
+#ifdef AHLS
                      sycl::ext::altera::experimental::latency<0>, sycl::ext::altera::experimental::dwidth<16>,
                      sycl::ext::altera::experimental::buffer_location<kOutputBufferLocation>,
                      sycl::ext::altera::experimental::read_write_mode_write,
                      sycl::ext::altera::experimental::wait_request_requested})>
-                #else
+#else
                      sycl::ext::intel::experimental::latency<0>, sycl::ext::intel::experimental::dwidth<16>,
                      sycl::ext::intel::experimental::buffer_location<kOutputBufferLocation>,
                      sycl::ext::intel::experimental::read_write_mode_write,
                      sycl::ext::intel::experimental::wait_request_requested})>
-                #endif
+#endif
 #else
     // USM pointer, otherwise.
     dst_T *const
@@ -195,7 +194,7 @@ template <class src_pipe, class dst_T, class ttft_flag_T, class txct_T> struct D
     size_t num_packs;
 
     [[intel::kernel_args_restrict]] void operator()() const {
-#if defined(IS_BSP)
+#ifndef USM_MEMORY
         sycl::ext::altera::host_ptr<dst_T> dst_ptr(dst);
 #else
         dst_T *dst_ptr(dst);
@@ -203,62 +202,88 @@ template <class src_pipe, class dst_T, class ttft_flag_T, class txct_T> struct D
         // First, extract the PipeDataT from the pipe
         using PipeDataType = typename nnet::ExtractPipeType<src_pipe>::value_type;
         // Then, extract the DataT from StreamingBeat
-    #ifdef AUTOREG
+#ifdef AUTOREG
         constexpr auto srcTypeSize = std::tuple_size<typename PipeDataType::data_type>{};
-    #else
+#else
         constexpr auto srcTypeSize = std::tuple_size<PipeDataType>{};
-    #endif
+#endif
 
         [[intel::fpga_register]] PipeDataType packet;
         [[intel::fpga_register]] txct_T txct = 0;
 
-        auto write_to_host = [&](size_t i, const PipeDataType& pack){
-            #pragma unroll 4
-            for (size_t j = 0; j < srcTypeSize; j++) {
-            #ifdef AUTOREG
-                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(pack.data[j].to_double());
-            #else
-                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(pack[j].to_double());
-            #endif  
-            }
-        };
+        const size_t last = (num_packs > 0) ? (num_packs - 1) : 0;
 
-    #ifdef AUTOREG
-        packet = src_pipe::read();  
+#ifdef AUTOREG
+        packet = src_pipe::read();
         if (packet.exit_task) {
             *ttft_flag = 1;
-            *tx_counter = txct + 1;
+            *tx_counter = txct;
             return;
         }
-        write_to_host(0, packet);
+        #pragma unroll 4
+        for (size_t j = 0; j < srcTypeSize; j++) {
+#ifdef AUTOREG
+            // dst_ptr[j] = static_cast<dst_T>(packet.data[j].to_double());
+            dst_ptr[j] = static_cast<dst_T>(packet.data[j]);
+#else
+            // dst_ptr[j] = static_cast<dst_T>(packet[j].to_double());
+            dst_ptr[j] = static_cast<dst_T>(packet[j]);
+#endif
+        }
         *ttft_flag = 1;
         txct = 1;
         size_t i = (num_packs > 1) ? 1 : 0;
 
-        while (true){
-            packet = src_pipe::read();  
-            if (packet.exit_task) break;
+        while (true) {
+            packet = src_pipe::read();
+            if (packet.exit_task)
+                break;
             txct++;
-            write_to_host(i, packet);
-            i = ((i + 1) >= num_packs) ? (i + 1 - num_packs) : (i + 1);
+            #pragma unroll 4
+            for (size_t j = 0; j < srcTypeSize; j++) {
+#ifdef AUTOREG
+                // dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet.data[j].to_double());
+                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet.data[j]);
+#else
+                // dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet[j].to_double());
+                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet[j]);
+#endif
+            }
+            i = (i == last) ? 0 : (i + 1);
         }
-        *tx_counter = txct + 1;
-    #else
-        if (num_packs > 0){
-            packet = src_pipe::read();  
-            write_to_host(0, packet);
+        *tx_counter = txct;
+#else
+        if (num_packs > 0) {
+            packet = src_pipe::read();
+            #pragma unroll 4
+            for (size_t j = 0; j < srcTypeSize; j++) {
+#ifdef AUTOREG
+                dst_ptr[j] = static_cast<dst_T>(packet.data[j].to_double());
+#else
+                dst_ptr[j] = static_cast<dst_T>(packet[j].to_double());
+#endif
+            }
             *ttft_flag = 1;
             txct = 1;
         }
         // Drain the output pipe and write result to memory.
         for (size_t i = 1; i < num_packs; i++) {
-            packet = src_pipe::read();  
+            packet = src_pipe::read();
             txct++;
-            write_to_host(i, packet);
+            #pragma unroll 4
+            for (size_t j = 0; j < srcTypeSize; j++) {
+#ifdef AUTOREG
+                // dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet.data[j].to_double());
+                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet.data[j]);
+#else
+                // dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet[j].to_double());
+                dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet[j]);
+#endif
+            }
         }
-        *tx_counter = txct + 1;
-    #endif    
-    }  
+        *tx_counter = txct;
+#endif
+    }
 };
 
 template <class src_pipe, class dst_T> struct DMA_convert_data_back_bridge_ver {
@@ -266,17 +291,17 @@ template <class src_pipe, class dst_T> struct DMA_convert_data_back_bridge_ver {
     // Without BSP, instantiate an Avalon Memory Mapped Host to write to host.
     sycl::ext::oneapi::experimental::annotated_arg<
         dst_T *, decltype(sycl::ext::oneapi::experimental::properties{
-                #ifdef AHLS
+#ifdef AHLS
                      sycl::ext::altera::experimental::latency<0>, sycl::ext::altera::experimental::dwidth<16>,
                      sycl::ext::altera::experimental::buffer_location<kOutputBufferLocation>,
                      sycl::ext::altera::experimental::read_write_mode_write,
                      sycl::ext::altera::experimental::wait_request_requested})>
-                #else
+#else
                      sycl::ext::intel::experimental::latency<0>, sycl::ext::intel::experimental::dwidth<16>,
                      sycl::ext::intel::experimental::buffer_location<kOutputBufferLocation>,
                      sycl::ext::intel::experimental::read_write_mode_write,
                      sycl::ext::intel::experimental::wait_request_requested})>
-                #endif
+#endif
 #else
     // USM pointer, otherwise.
     dst_T *const
@@ -292,14 +317,14 @@ template <class src_pipe, class dst_T> struct DMA_convert_data_back_bridge_ver {
         dst_T *dst_ptr(dst);
 #endif
 
-    // First, extract the PipeDataT from the pipe
-    #ifdef AUTOREG
+// First, extract the PipeDataT from the pipe
+#ifdef AUTOREG
         using PipeDataType = typename nnet::ExtractPipeType<src_pipe>::value_type;
         using PipeArrayType = typename PipeDataType::data_type;
-    #else
+#else
         using PipeDataType = typename nnet::ExtractPipeType<src_pipe>::value_type;
         using PipeArrayType = PipeDataType;
-    #endif
+#endif
 
         // Then, extract the DataT from StreamingBeat
         constexpr auto srcTypeSize = std::tuple_size<PipeArrayType>{};
@@ -311,23 +336,24 @@ template <class src_pipe, class dst_T> struct DMA_convert_data_back_bridge_ver {
         size_t i = 0;
         while (true) {
             packet = src_pipe::read();
-            if (packet.exit_task) return;
+            if (packet.exit_task)
+                return;
 #else
         for (size_t i = 0; i < num_packs; i++) {
             packet = src_pipe::read();
 #endif
             #pragma unroll 4
             for (size_t j = 0; j < srcTypeSize; j++) {
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet.data[j].to_double());
-            #else
+#else
                 dst_ptr[i * srcTypeSize + j] = static_cast<dst_T>(packet[j].to_double());
-            #endif
+#endif
             }
 
-        #ifdef AUTOREG
+#ifdef AUTOREG
             i = ((i + 1) >= num_packs) ? (i + 1 - num_packs) : (i + 1);
-        #endif
+#endif
         }
     }
 };

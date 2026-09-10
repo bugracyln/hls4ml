@@ -1,10 +1,11 @@
 import shutil
+import warnings
+from math import prod
+
 from hls4ml.backends.backend import get_backend
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
 from hls4ml.backends.template import FunctionCallTemplate, LayerConfigTemplate
 from hls4ml.model.layers import Activation, BatchNormalization, Dense, HardActivation, ParametrizedActivation, PReLU, Softmax
-from math import prod
-
 
 # Dense templates
 
@@ -18,6 +19,7 @@ dense_config_template = """struct config{index} : nnet::dense_config {{
 
     static constexpr unsigned rf_pad = {rfpad};
     static constexpr unsigned bf_pad = {bfpad};
+    static constexpr bool argmax = {argmax};
 
     static constexpr unsigned reuse_factor = {reuse};
     static constexpr unsigned compressed_block_factor = DIV_ROUNDUP(n_nonzeros, reuse_factor);
@@ -87,18 +89,19 @@ class DenseTaskSequenceTemplate(TaskSequenceTemplate):
         if max_invoc is not None:
             self.template = dense_task_sequence_template_max_invoc
             params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
-        
+
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
+        params['argmax'] = 'false'  # TODO - Change this
 
         if autoreg_model:
-            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()]
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
 
-            if (params['input_pipe'] in model_inp_names):
-                params['input_pipe'] = "SW_" + params['input_pipe']
-                
-            if (params['output_pipe'] in model_out_names):
-                params['output_pipe'] = "SW_" + params['output_pipe']
+            if params['input_pipe'] in model_inp_names:
+                params['input_pipe'] = 'SW_' + params['input_pipe']
+
+            if params['output_pipe'] in model_out_names:
+                params['output_pipe'] = 'SW_' + params['output_pipe']
 
         return self.template.format(**params)
 
@@ -183,14 +186,14 @@ class BatchNormalizationTaskSequenceTemplate(TaskSequenceTemplate):
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         if autoreg_model:
-            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()]
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
 
             if (params['input_pipe'] in model_inp_names) or (params['input_pipe'] in model_inp_names):
-                params['input_pipe'] = "SW_" + params['input_pipe']
-                
-            elif (params['output_pipe'] in model_out_names):
-                params['output_pipe'] = "SW_" + params['output_pipe']
+                params['input_pipe'] = 'SW_' + params['input_pipe']
+
+            elif params['output_pipe'] in model_out_names:
+                params['output_pipe'] = 'SW_' + params['output_pipe']
 
         return self.template.format(**params)
 
@@ -237,7 +240,7 @@ hard_activ_config_template = """struct {type}_config{index} : nnet::activ_config
 
 softmax_config_template = """struct {type}_config{index} : nnet::activ_config {{
     static constexpr unsigned n_in = {n_in};
-    
+
     // For multi-dim softmax
     static constexpr unsigned n_slice = {n_slice};
     static constexpr unsigned n_outer = {n_outer};
@@ -249,6 +252,7 @@ softmax_config_template = """struct {type}_config{index} : nnet::activ_config {{
 
     // For masked softmax
     static constexpr unsigned ctx_len = {context_len};
+    static constexpr unsigned n_head = {n_head};
 
     static constexpr unsigned exp_table_size = {exp_table_size};
     static constexpr unsigned inv_table_size = {inv_table_size};
@@ -311,6 +315,24 @@ class ActivationConfigTemplate(LayerConfigTemplate):
             # If no table size is specified, assume default size of 1024
             params.setdefault('exp_table_size', params['table_size'])
             params.setdefault('inv_table_size', params['table_size'])
+            if node.get_attr('_bit_exact', False):
+                # TableSize is a hard cap.  softmax_idx_from_real_val() addresses the LUT with
+                # the top ceil_log2(table_size) bits of its input, so capping below 2**width
+                # discards the low index bits and the model stops being bit-exact.  The writer
+                # compensates by placing the entries at bin centres rather than at the lower
+                # edge, which makes the residual error zero-mean instead of a systematic gain,
+                # but only matching sizes give an exact match.
+                for _name, _t in (('exp_table_size', 'inp_norm_t'), ('inv_table_size', 'inv_inp_t')):
+                    if params[_name] > params['table_size']:
+                        _addr = int(params['table_size']).bit_length() - 1
+                        warnings.warn(
+                            f'Softmax layer {node.name}: {_name}={params[_name]} capped to '
+                            f'TableSize={params["table_size"]}, so the LUT is addressed by the top '
+                            f'{_addr} bits of {_t} only and HLS will NOT be bit-exact with Keras. '
+                            f'Raise TableSize, or narrow the HGQ quantizer behind {_t} so that '
+                            f'2**(i0+f0) <= TableSize, for an exact match.',
+                            stacklevel=1,
+                        )
             params['exp_table_size'] = min(params['exp_table_size'], params['table_size'])
             params['inv_table_size'] = min(params['inv_table_size'], params['table_size'])
 
@@ -324,7 +346,7 @@ class ActivationConfigTemplate(LayerConfigTemplate):
             params.setdefault('exp_scale', 1.0)
             params.setdefault('parallelization_factor', -1)
 
-            # For streamed n_in represents the entire sequence not a single tensor, for example 
+            # For streamed n_in represents the entire sequence not a single tensor, for example
             # (10,32,32) is 10 units of 32x32 tensor stream so figure the slice based on pipe size
             # and read n_in/tensor_size where tensor_size = pipe_size in streamed mode
             if node.model.config.get_config_value('IOType') == 'io_stream':
@@ -332,11 +354,13 @@ class ActivationConfigTemplate(LayerConfigTemplate):
                 ax = node.attributes['axis']
                 ax = ax if ax >= 0 else len(node.get_input_variable().shape) + ax
                 params['n_outer'] = prod(node.get_input_variable().shape[2:ax])
-                params['n_inner'] = prod(node.get_input_variable().shape[ax+1:])
-                
+                params['n_inner'] = prod(node.get_input_variable().shape[ax + 1 :])
+
                 n_slice = node.get_input_variable().type.n_elem // params['n_inner'] // params['n_outer']
-                assert n_slice >= 1, (f'Tensor fed to {node.name} has shape {node.get_input_variable().shape}, '
-                                       f'but pipe has size {node.get_input_variable().type.n_elem} resulting in n_slice < 1')
+                assert n_slice >= 1, (
+                    f'Tensor fed to {node.name} has shape {node.get_input_variable().shape}, '
+                    f'but pipe has size {node.get_input_variable().type.n_elem} resulting in n_slice < 1'
+                )
             else:
                 n_slice = params['n_in'] // params['n_inner'] // params['n_outer']
 
@@ -347,12 +371,13 @@ class ActivationConfigTemplate(LayerConfigTemplate):
 
             if params['implementation'] == 'stable':
                 self.template = softmax_config_template + softmax_config_table_template_stable
-            
-            # This is for special MHA case wher we use causal masking for softmax to avoid precision 
-            # related inaccuracy arising since minimum value is limited by precision and we cannot 
-            # represent -INF, leading to massive drift during initial samples since most of the arrays 
+
+            # This is for special MHA case wher we use causal masking for softmax to avoid precision
+            # related inaccuracy arising since minimum value is limited by precision and we cannot
+            # represent -INF, leading to massive drift during initial samples since most of the arrays
             # arrive as minval<data_T>() which is >> -INF
             params.setdefault('context_len', 0)
+            params.setdefault('n_head', 1)
 
         return self.template.format(**params)
 
@@ -442,19 +467,18 @@ class ActivationTaskSequenceTemplate(TaskSequenceTemplate):
         if max_invoc is not None:
             self.template = activ_task_sequence_template_max_invoc
             params['maxinvoc'] = 'ts_invoc_props' if shutil.which('ahls') else f'{max_invoc},{max_invoc}'
-        
+
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         if autoreg_model:
-            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()]
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
 
             if (params['input_pipe'] in model_inp_names) or (params['input_pipe'] in model_inp_names):
-                params['input_pipe'] = "SW_" + params['input_pipe']
-                
-            elif (params['output_pipe'] in model_out_names):
-                params['output_pipe'] = "SW_" + params['output_pipe']
+                params['input_pipe'] = 'SW_' + params['input_pipe']
 
+            elif params['output_pipe'] in model_out_names:
+                params['output_pipe'] = 'SW_' + params['output_pipe']
 
         return self.template.format(**params)
 
@@ -477,15 +501,14 @@ class ParametrizedActivationTaskSequenceTemplate(TaskSequenceTemplate):
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         if autoreg_model:
-            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()]
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
 
             if (params['input_pipe'] in model_inp_names) or (params['input_pipe'] in model_inp_names):
-                params['input_pipe'] = "SW_" + params['input_pipe']
-                
-            elif (params['output_pipe'] in model_out_names):
-                params['output_pipe'] = "SW_" + params['output_pipe']
-        
+                params['input_pipe'] = 'SW_' + params['input_pipe']
+
+            elif params['output_pipe'] in model_out_names:
+                params['output_pipe'] = 'SW_' + params['output_pipe']
 
         return self.template.format(**params)
 

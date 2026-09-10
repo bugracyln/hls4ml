@@ -1,9 +1,9 @@
+import math
 import typing
 from copy import copy
 from warnings import warn
 
 import numpy as np
-import math
 
 from hls4ml.model.attributes import (
     Attribute,
@@ -206,8 +206,8 @@ class Layer(Serializable):
             if has_type_t:
                 type_t = NamedType(*reversed(self.model.config.get_precision(self, name)))
                 self.set_attr(name + '_t', type_t)
-        # This improves inv_inp precision by extracting only required integer part for the table - rest is used as fractional.
-        if name == 'inv_inp':
+        # We skip if table is quantised by HGQ (_bit_exact property) since we want to match Keras and HGQ saturation
+        if name == 'inv_inp' and not self.get_attr('_bit_exact', False):
             self.get_attr(f'{name}_t').integer = 1 + math.ceil(math.log2(max(self.get_input_variable().shape)))
 
     def get_input_node(self, input_name=None):

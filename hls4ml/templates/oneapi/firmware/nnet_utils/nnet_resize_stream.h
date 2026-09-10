@@ -21,7 +21,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void resize_neares
     constexpr unsigned ratio_width = CONFIG_T::new_width / CONFIG_T::width;
 
 #ifdef AUTOREG
-    while (true){
+    while (true) {
 #endif
 
     ImageHeight:
@@ -30,18 +30,18 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void resize_neares
 
         ImageWidth:
             for (unsigned i = 0; i < CONFIG_T::width; i++) {
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 [[intel::fpga_register]] auto in_data_pipe = data_pipe::read();
                 bool fb = in_data_pipe.feedback;
-                if (in_data_pipe.exit_task){
+                if (in_data_pipe.exit_task) {
                     out_data_pipe.exit_task = true;
                     res_pipe::write(out_data_pipe);
                     return;
                 }
                 [[intel::fpga_register]] auto in_data = in_data_pipe.data;
-            #else
-                [[intel::fpga_register]] auto in_data = data_pipe::read();
-            #endif
+#else
+            [[intel::fpga_register]] auto in_data = data_pipe::read();
+#endif
 
             ImageChan:
                 #pragma unroll
@@ -66,14 +66,14 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void resize_neares
                         for (unsigned k = 0; k < CONFIG_T::n_chan; k++) {
                             out_data[k] = data_in_row[l][k];
                         }
-                    #ifdef AUTOREG
+#ifdef AUTOREG
                         out_data_pipe.data = out_data;
                         out_data_pipe.exit_task = false;
                         out_data_pipe.feedback = fb;
                         res_pipe::write(out_data_pipe);
-                    #else
-                        res_pipe::write(out_data);
-                    #endif
+#else
+                    res_pipe::write(out_data);
+#endif
                     }
                 }
             }

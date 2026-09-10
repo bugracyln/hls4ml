@@ -27,18 +27,18 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void transpose_str
         [[intel::fpga_register]] typename data_T::value_type data_array[CONFIG_T::N];
 
         for (int i = 0; i < CONFIG_T::N / data_size; i++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             [[intel::fpga_register]] data_pipe_T in_data_pipe = data_pipe::read();
             bool fb = in_data_pipe.feedback;
-            if (in_data_pipe.exit_task){
+            if (in_data_pipe.exit_task) {
                 out_data_pipe.exit_task = true;
                 res_pipe::write(out_data_pipe);
                 return;
             }
             [[intel::fpga_register]] data_T in_data = in_data_pipe.data;
-        #else
-            [[intel::fpga_register]] data_T in_data = data_pipe::read();
-        #endif
+#else
+        [[intel::fpga_register]] data_T in_data = data_pipe::read();
+#endif
 
             #pragma unroll
             for (int j = 0; j < data_size; j++) {
@@ -53,15 +53,15 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void transpose_str
             for (int j = 0; j < res_size; j++) {
                 out_data[j] = typename res_T::value_type(data_array[transfer_idx<CONFIG_T>(i * res_size + j)]);
             }
-        
-        #ifdef AUTOREG
+
+#ifdef AUTOREG
             out_data_pipe.data = out_data;
             out_data_pipe.exit_task = false;
             out_data_pipe.feedback = fb;
             res_pipe::write(out_data_pipe);
-        #else
-            res_pipe::write(out_data);
-        #endif
+#else
+        res_pipe::write(out_data);
+#endif
         }
 
 #ifdef AUTOREG

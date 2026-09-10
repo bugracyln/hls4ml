@@ -110,21 +110,21 @@ LineBufferDataIn:
  * kernel weights (4) Counter housekeeping - keeps track of current pixel and stride
  */
 template <class data_in_T, class data_window_T, class res_pipe, typename CONFIG_T>
-void compute_output_buffer_2d(
-    const data_in_T &in_elem,
-    #ifdef AUTOREG
-    nnet::shift_reg<typename data_in_T::value_type::data_type,
-    #else
-    nnet::shift_reg<typename data_in_T::value_type,
-    #endif
-    CONFIG_T::pad_left + CONFIG_T::in_width + CONFIG_T::pad_right>
-        line_buffer[MAX(CONFIG_T::filt_height - 1, 1)][CONFIG_T::n_chan],
-    data_window_T &kernel_window, const typename CONFIG_T::weight_t &weights, const typename CONFIG_T::bias_t &biases,
-    int &pX, int &pY, int &sX, int &sY    
-    #ifdef AUTOREG
-    , bool &exit_task
-    #endif
-    ) {
+void compute_output_buffer_2d(const data_in_T &in_elem,
+#ifdef AUTOREG
+                              nnet::shift_reg<typename data_in_T::value_type::data_type,
+#else
+                              nnet::shift_reg<typename data_in_T::value_type,
+#endif
+                                              CONFIG_T::pad_left + CONFIG_T::in_width + CONFIG_T::pad_right>
+                                  line_buffer[MAX(CONFIG_T::filt_height - 1, 1)][CONFIG_T::n_chan],
+                              data_window_T &kernel_window, const typename CONFIG_T::weight_t &weights,
+                              const typename CONFIG_T::bias_t &biases, int &pX, int &pY, int &sX, int &sY
+#ifdef AUTOREG
+                              ,
+                              bool &exit_task
+#endif
+) {
 
 #ifdef AUTOREG
     using data_T = typename data_in_T::data_type;
@@ -134,7 +134,7 @@ void compute_output_buffer_2d(
     [[intel::fpga_register]] out_pipe_T out_pipe;
     out_pipe.feedback = in_elem.feedback;
 
-    if(in_elem.exit_task){
+    if (in_elem.exit_task) {
         out_pipe.exit_task = true;
         exit_task = true;
         res_pipe::write(out_pipe);
@@ -174,14 +174,14 @@ void compute_output_buffer_2d(
         for (int channel = 0; channel < CONFIG_T::n_filt; channel++) {
             res_pack[channel] = res_out[channel];
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_pipe.data = res_pack;
         out_pipe.exit_task = false;
         exit_task = false;
         res_pipe::write(out_pipe);
-    #else 
+#else
         res_pipe::write(res_pack);
-    #endif
+#endif
     }
 
     // Reached end of image
@@ -238,13 +238,13 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void conv_2d_cl_st
     int sY = 0;
 
 #ifdef AUTOREG
-while (true){
+    while (true) {
 
-    // Reset strides for each image
-    int pX = 0;
-    int pY = 0;
-    int sX = 0;
-    int sY = 0;
+        // Reset strides for each image
+        int pX = 0;
+        int pY = 0;
+        int sX = 0;
+        int sY = 0;
 
     // Padding above input image
     PaddingTopHeight:
@@ -252,7 +252,8 @@ while (true){
         PaddingTopWidth:
             for (int col = 0; col < CONFIG_T::pad_left + CONFIG_T::in_width + CONFIG_T::pad_right; col++) {
                 compute_output_buffer_2d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
-                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY, exit_task);
+                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY,
+                    exit_task);
             }
         }
 
@@ -262,23 +263,27 @@ while (true){
         PaddingLeftWidth:
             for (int col = 0; col < CONFIG_T::pad_left; col++) {
                 compute_output_buffer_2d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
-                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY, exit_task);
+                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY,
+                    exit_task);
             }
 
         // Read input image
         ReadInputWidth:
             for (int col = 0; col < CONFIG_T::in_width; col++) {
                 compute_output_buffer_2d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
-                    data_pipe::read(), line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY, exit_task);
+                    data_pipe::read(), line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY,
+                    exit_task);
 
-                if (exit_task) return;
+                if (exit_task)
+                    return;
             }
 
         // Input image right-side padding
         PaddingRightWidth:
             for (int col = 0; col < CONFIG_T::pad_right; col++) {
                 compute_output_buffer_2d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
-                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY, exit_task);
+                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY,
+                    exit_task);
             }
         }
 
@@ -288,7 +293,8 @@ while (true){
         PaddingBottomWidth:
             for (int col = 0; col < CONFIG_T::pad_left + CONFIG_T::in_width + CONFIG_T::pad_right; col++) {
                 compute_output_buffer_2d<data_pipe_T, data_window_T, res_pipe, CONFIG_T>(
-                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY, exit_task);
+                    padds_packet, line_buffer, kernel_window, CONFIG_T::weights, CONFIG_T::biases, pX, pY, sX, sY,
+                    exit_task);
             }
         }
     }

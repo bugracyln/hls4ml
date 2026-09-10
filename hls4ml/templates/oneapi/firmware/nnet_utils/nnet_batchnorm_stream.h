@@ -8,7 +8,6 @@
 
 namespace nnet {
 
-    
 // ****************************************************
 //       Streaming Batch Normalization
 // ****************************************************
@@ -30,23 +29,22 @@ void normalize_stream(typename CONFIG_T::scale_t scale, typename CONFIG_T::bias_
 
     constexpr auto datasize = std::tuple_size<data_arr_T>{};
     constexpr unsigned packets_per_tensor = CONFIG_T::n_in / datasize;
-    CONFIG_T::template product<typename data_arr_T::value_type,
-                               typename CONFIG_T::scale_t::value_type>::limit(multiplier_limit);
+    CONFIG_T::template product<typename data_arr_T::value_type, typename CONFIG_T::scale_t::value_type>::limit(
+        multiplier_limit);
 
 BatchNormLoop:
 
 #ifdef AUTOREG
+    bool exit_task = false;
     unsigned i = 0;
-    while (true){
-        auto in_data = data_pipe::read();
-        
+    while (!exit_task) {
         res_pipe_T out_data;
+
+        auto in_data = data_pipe::read();
+
+        exit_task |= in_data.exit_task;
+        out_data.exit_task = exit_task;
         out_data.feedback = in_data.feedback;
-        if(in_data.exit_task){
-            out_data.exit_task = true;
-            res_pipe::write(out_data);
-            break;
-        }
 #else
     //[[intel::initiation_interval(pipeline)]]
     for (int i = 0; i < packets_per_tensor; i++) {
@@ -56,37 +54,38 @@ BatchNormLoop:
 
     BatchNormpack:
         int norm_index = 0;
-        #pragma unroll 4 // TODO: Introduce a config parameter for unroll factor here
+        #pragma unroll
         for (int j = 0; j < datasize; j++) {
+
             if constexpr (CONFIG_T::n_filt == -1)
                 norm_index = i * datasize + j;
-            else{
-                //norm_index = j % CONFIG_T::n_filt;
-                if (norm_index == CONFIG_T::n_filt) norm_index = 0;
-            }
-                
-        
-        #ifdef AUTOREG
+            else
+                norm_index = j % CONFIG_T::n_filt; // Modulo allowed here only due to the unrolling
+
+#ifdef AUTOREG
             out_data.data[j] =
-                CONFIG_T::template product<typename data_arr_T::value_type,
-                                           typename CONFIG_T::scale_t::value_type>::product(in_data.data[j], scale[norm_index]) +
-                bias[norm_index];  
-        #else
-            out_data[j] =
-                CONFIG_T::template product<typename data_arr_T::value_type,
-                                           typename CONFIG_T::scale_t::value_type>::product(in_data[j], scale[norm_index]) +
+                CONFIG_T::template product<typename data_arr_T::value_type, typename CONFIG_T::scale_t::value_type>::product(
+                    in_data.data[j], scale[norm_index]) +
                 bias[norm_index];
-        #endif
-            norm_index++;
+#else
+            out_data[j] =
+                CONFIG_T::template product<typename data_arr_T::value_type, typename CONFIG_T::scale_t::value_type>::product(
+                    in_data[j], scale[norm_index]) +
+                bias[norm_index];
+#endif
         }
 
-    #ifdef AUTOREG
-        out_data.exit_task = false;
+#ifdef AUTOREG
         // In autoreg mode we expect data to arrive in correct tensor-packet order
-        i++;
-        if (i == packets_per_tensor) i = 0;
-    #endif
+        if constexpr (CONFIG_T::n_filt == -1) {
+            i++;
+            if (i == packets_per_tensor)
+                i = 0;
+        }
         res_pipe::write(out_data);
+#else
+        res_pipe::write(out_data);
+#endif
     }
 }
 
@@ -112,11 +111,11 @@ void normalize_binary_tanh_stream(typename CONFIG_T::threshold_t threshold) {
 BinaryNormLoop:
 #ifdef AUTOREG
     unsigned i = 0;
-    while (true) {
+    [[intel::initiation_interval(1)]] while (true) {
         auto in_data = data_pipe::read();
         res_pipe_T out_pipe;
         out_pipe.feedback = in_data.feedback;
-        if (in_data.exit_task){
+        if (in_data.exit_task) {
             out_pipe.exit_task = true;
             res_pipe::write(out_pipe);
             break;
@@ -133,27 +132,29 @@ BinaryNormLoop:
         for (int j = 0; j < datasize; j++) {
             if constexpr (CONFIG_T::n_filt == -1)
                 norm_index = i * datasize + j;
-            else{            
-                //norm_index = j % CONFIG_T::n_filt;
-                if (norm_index == CONFIG_T::n_filt) norm_index = 0;
+            else {
+                // norm_index = j % CONFIG_T::n_filt;
+                if (norm_index == CONFIG_T::n_filt)
+                    norm_index = 0;
             }
-        
-        #ifdef AUTOREG
+
+#ifdef AUTOREG
             out_data[j] = (in_data.data[j] >= threshold[norm_index]) ? 1 : 0;
-        #else
+#else
             out_data[j] = (in_data[j] >= threshold[norm_index]) ? 1 : 0;
-        #endif
+#endif
             norm_index++;
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         i++;
-        if (i == packets_per_tensor) i = 0;
+        if (i == packets_per_tensor)
+            i = 0;
         out_pipe.data = out_data;
         out_pipe.exit_task = false;
         res_pipe::write(out_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -177,11 +178,11 @@ void normalize_ternary_tanh_stream(typename CONFIG_T::threshold_hi_t threshold_h
 TernaryNormLoop:
 #ifdef AUTOREG
     unsigned i = 0;
-    while (true) {
+    [[intel::initiation_interval(1)]] while (true) {
         auto in_data = data_pipe::read();
         res_pipe_T out_pipe;
         out_pipe.feedback = in_data.feedback;
-        if (in_data.exit_task){
+        if (in_data.exit_task) {
             out_pipe.exit_task = true;
             res_pipe::write(out_pipe);
             break;
@@ -198,35 +199,37 @@ TernaryNormLoop:
         for (int j = 0; j < datasize; j++) {
             if constexpr (CONFIG_T::n_filt == -1)
                 norm_index = i * datasize + j;
-            else{            
-                //norm_index = j % CONFIG_T::n_filt;
-                if (norm_index == CONFIG_T::n_filt) norm_index = 0;
+            else {
+                // norm_index = j % CONFIG_T::n_filt;
+                if (norm_index == CONFIG_T::n_filt)
+                    norm_index = 0;
             }
 
-        #ifdef AUTOREG
+#ifdef AUTOREG
             if (in_data.data[j] > threshold_hi[norm_index])
                 out_data[j] = 1;
             else if (in_data.data[j] <= threshold_lo[norm_index])
                 out_data[j] = -1;
-        #else
+#else
             if (in_data[j] > threshold_hi[norm_index])
                 out_data[j] = 1;
             else if (in_data[j] <= threshold_lo[norm_index])
                 out_data[j] = -1;
-        #endif
+#endif
             else
                 out_data[j] = 0;
             norm_index++;
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         i++;
-        if (i == packets_per_tensor) i = 0;
+        if (i == packets_per_tensor)
+            i = 0;
         out_pipe.data = out_data;
         out_pipe.exit_task = false;
         res_pipe::write(out_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 

@@ -21,33 +21,33 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void linear_stream
 
 LinearActLoop:
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
 #else
-    [[intel::initiation_interval(1)]] 
-    for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
+    [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 #endif
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
-    #ifdef AUTOREG
-        out_data.feedback = in_data.feedback;
-        if (in_data.exit_task){
-            out_data.exit_task = true;
-            res_pipe::write(out_data);
-            return;
-        }
-    #endif
 
     LinearPackLoop:
         #pragma unroll
         for (int j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
-        #ifdef AUTOREG    
+#ifdef AUTOREG
             out_data.data[j] = in_data.data[j];
-        #else
+#else
             out_data[j] = in_data[j];
-        #endif   
+#endif
         }
 
+#ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
+        out_data.exit_task = in_data.exit_task;
+#endif
         res_pipe::write(out_data);
+
+#ifdef AUTOREG
+        if (out_data.exit_task)
+            return;
+#endif
     }
 }
 
@@ -58,40 +58,40 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void relu_stream()
 ReLUActLoop:
 #ifdef AUTOREG
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
-    while (true){
+    while (true) {
 #else
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-    [[intel::initiation_interval(
-        1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
+    [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 #endif
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
-    
-    #ifdef AUTOREG
-        out_data.feedback = in_data.feedback;
-        if (in_data.exit_task){
-            out_data.exit_task = true;
-            res_pipe::write(out_data);
-            return;
-        }
-    #endif
 
     ReLUPackLoop:
         #pragma unroll
         for (int j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
-        #ifdef AUTOREG 
+#ifdef AUTOREG
             if (in_data.data[j] > 0)
                 out_data.data[j] = in_data.data[j];
             else
                 out_data.data[j] = 0;
-        #else
+#else
             if (in_data[j] > 0)
                 out_data[j] = in_data[j];
             else
                 out_data[j] = 0;
-        #endif   
+#endif
         }
+
+#ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
+        out_data.exit_task = in_data.exit_task;
+#endif
         res_pipe::write(out_data);
+
+#ifdef AUTOREG
+        if (out_data.exit_task)
+            return;
+#endif
     }
 }
 
@@ -108,44 +108,40 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void leaky_relu_st
     constexpr unsigned pipeline = in_pipe_size / multiplier_limit;
 #endif
 
-
 LeakyReLUActLoop:
 #ifdef AUTOREG
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
-    while (true){
+    while (true) {
 #else
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-    [[intel::initiation_interval(pipeline)]] for (int i = 0;
-                                                  i < CONFIG_T::n_in /
-                                                          std::tuple_size<res_arr_T>{};
-                                                  i++) {
+    [[intel::initiation_interval(pipeline)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 #endif
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data.feedback = in_data.feedback;
-        if (in_data.exit_task){
+        if (in_data.exit_task) {
             out_data.exit_task = true;
             res_pipe::write(out_data);
             return;
         }
-    #endif
+#endif
 
     LeakyReLUPackLoop:
         #pragma unroll
         for (int j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
-        #ifdef AUTOREG  
+#ifdef AUTOREG
             if (in_data.data[j] > 0)
                 out_data.data[j] = in_data.data[j];
             else
                 out_data.data[j] = alpha * in_data.data[j];
-        #else
+#else
             if (in_data[j] > 0)
                 out_data[j] = in_data[j];
             else
                 out_data[j] = alpha * in_data[j];
-        #endif
+#endif
         }
 
         res_pipe::write(out_data);
@@ -160,38 +156,37 @@ void thresholded_relu_stream(typename CONFIG_T::param_t theta) {
 ThresholdedReLUActLoop:
 #ifdef AUTOREG
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
 #else
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-    [[intel::initiation_interval(1)]] 
-    for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
+    [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 #endif
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
-        #ifdef AUTOREG
-            out_data.feedback = in_data.feedback;
-            if (in_data.exit_task){
-                out_data.exit_task = true;
-                res_pipe::write(out_data);
-                return;
-            }
-        #endif
+#ifdef AUTOREG
+        out_data.feedback = in_data.feedback;
+        if (in_data.exit_task) {
+            out_data.exit_task = true;
+            res_pipe::write(out_data);
+            return;
+        }
+#endif
 
     ThresholdedReLUPackLoop:
         #pragma unroll
         for (int j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             if (in_data.data[j] > theta)
                 out_data.data[j] = in_data.data[j];
             else
                 out_data.data[j] = 0;
-        #else
+#else
             if (in_data[j] > theta)
                 out_data[j] = in_data[j];
             else
                 out_data[j] = 0;
-        #endif
+#endif
         }
 
         res_pipe::write(out_data);
@@ -214,51 +209,47 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void elu_stream(ty
     constexpr unsigned pipeline = in_pipe_size / multiplier_limit;
 #endif
 
-
 EluActLoop:
 #ifdef AUTOREG
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
-    while (true){
+    while (true) {
 #else
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-    [[intel::initiation_interval(pipeline)]] for (int i = 0;
-                                                  i < CONFIG_T::n_in /
-                                                          std::tuple_size<res_arr_T>{};
-                                                  i++) {
+    [[intel::initiation_interval(pipeline)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 #endif
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data.feedback = in_data.feedback;
-        if (in_data.exit_task){
+        if (in_data.exit_task) {
             out_data.exit_task = true;
             res_pipe::write(out_data);
             return;
         }
-    #endif
+#endif
 
     EluPackLoop:
         #pragma unroll
         for (int j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             [[intel::fpga_register]] data_T datareg = in_data.data[j];
             if (datareg >= 0) {
                 out_data.data[j] = datareg;
-        #else
+#else
             [[intel::fpga_register]] data_T datareg = in_data[j];
             if (datareg >= 0) {
-                out_data[j] = datareg; 
-        #endif
+                out_data[j] = datareg;
+#endif
             } else {
                 int index = (datareg * CONFIG_T::table_size / -8).to_int();
                 if (index > CONFIG_T::table_size - 1)
                     index = CONFIG_T::table_size - 1;
-            #ifdef AUTOREG
+#ifdef AUTOREG
                 out_data.data[j] = alpha * elu_table[index];
-            #else
+#else
                 out_data[j] = alpha * elu_table[index];
-            #endif
+#endif
             }
         }
 
@@ -282,49 +273,46 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void selu_stream()
 
 SeluActLoop:
 #ifdef AUTOREG
-    while (true){
+    while (true) {
 #else
-    [[intel::initiation_interval(
-        1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
+    [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 #endif
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data.feedback = in_data.feedback;
-        if (in_data.exit_task){
+        if (in_data.exit_task) {
             out_data.exit_task = true;
             res_pipe::write(out_data);
             return;
         }
-    #endif
+#endif
 
     SeluPackLoop:
         #pragma unroll
         for (int j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
-            #ifdef AUTOREG
+#ifdef AUTOREG
             [[intel::fpga_register]] data_T datareg = in_data.data[j];
             if (datareg >= 0) {
-                out_data.data[j] =
-                    static_cast<data_T>(1.0507009873554804934193349852946) * datareg;
+                out_data.data[j] = static_cast<data_T>(1.0507009873554804934193349852946) * datareg;
             } else {
                 int index = (datareg * CONFIG_T::table_size / -8).to_int();
                 if (index > CONFIG_T::table_size - 1)
                     index = CONFIG_T::table_size - 1;
-            
+
                 out_data.data[j] = selu_table[index];
-            #else
+#else
             [[intel::fpga_register]] data_T datareg = in_data[j];
             if (datareg >= 0) {
-                out_data[j] =
-                    static_cast<data_T>(1.0507009873554804934193349852946) * datareg;
+                out_data[j] = static_cast<data_T>(1.0507009873554804934193349852946) * datareg;
             } else {
                 int index = (datareg * CONFIG_T::table_size / -8).to_int();
                 if (index > CONFIG_T::table_size - 1)
                     index = CONFIG_T::table_size - 1;
-                
+
                 out_data[j] = selu_table[index];
-            #endif
+#endif
             }
         }
 
@@ -338,7 +326,7 @@ SeluActLoop:
 template <class data_pipe, class res_pipe, typename CONFIG_T> void prelu_stream(typename CONFIG_T::param_t alpha) {
 
 #ifdef AUTOREG
-    //using data_T = typename ExtractPipeType<data_pipe>::value_type::data_type::value_type;
+    // using data_T = typename ExtractPipeType<data_pipe>::value_type::data_type::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type::data_type;
     auto in_pipe_size = std::tuple_size<typename ExtractPipeType<data_pipe>::value_type::data_type>{};
 
@@ -349,50 +337,46 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void prelu_stream(
     constexpr unsigned multiplier_limit = DIV_ROUNDUP(in_pipe_size, CONFIG_T::reuse_factor);
 #endif
 
-   
-    
-
 PReLUActLoop:
 #ifdef AUTOREG
     int i = 0;
-    while (true){
+    while (true) {
 #else
     constexpr unsigned pipeline = in_pipe_size / multiplier_limit;
-    [[intel::initiation_interval(pipeline)]] for (int i = 0;
-                                                  i < CONFIG_T::n_in /
-                                                          std::tuple_size<res_arr_T>{};
-                                                  i++) {
+    [[intel::initiation_interval(pipeline)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 #endif
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data.feedback = in_data.feedback;
-        if (in_data.exit_task){
+        if (in_data.exit_task) {
             out_data.exit_task = true;
             res_pipe::write(out_data);
             return;
         }
-    #endif
+#endif
 
     PReLUPackLoop:
         #pragma unroll
         for (int j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             if (in_data.data[j] > 0)
                 out_data.data[j] = in_data.data[j];
             else
                 out_data.data[j] = alpha[i * std::tuple_size<res_arr_T>{} + j] * in_data.data[j];
-        #else
+#else
             if (in_data[j] > 0)
                 out_data[j] = in_data[j];
             else
                 out_data[j] = alpha[i * std::tuple_size<res_arr_T>{} + j] * in_data[j];
-        #endif
+#endif
         }
-    #ifdef AUTOREG
-        i = (i+1 >= (CONFIG_T::n_in / std::tuple_size<res_arr_T>{})) ? (i+1 - CONFIG_T::n_in / std::tuple_size<res_arr_T>{} ) : (i+1); 
-    #endif
+#ifdef AUTOREG
+        i = (i + 1 >= (CONFIG_T::n_in / std::tuple_size<res_arr_T>{}))
+                ? (i + 1 - CONFIG_T::n_in / std::tuple_size<res_arr_T>{})
+                : (i + 1);
+#endif
         res_pipe::write(out_data);
     }
 }
@@ -411,42 +395,41 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void softplus_stre
 
 SoftplusActLoop:
 #ifdef AUTOREG
-    while (true){
+    while (true) {
 #else
-    [[intel::initiation_interval(
-        1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
+    [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 #endif
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data.feedback = in_data.feedback;
-        if (in_data.exit_task){
+        if (in_data.exit_task) {
             out_data.exit_task = true;
             res_pipe::write(out_data);
             return;
         }
-    #endif
+#endif
 
     SoftplusPackLoop:
         #pragma unroll
         for (int j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             [[intel::fpga_register]] int data_round = (in_data.data[j] * CONFIG_T::table_size / 16).to_int();
-        #else
+#else
             [[intel::fpga_register]] int data_round = (in_data[j] * CONFIG_T::table_size / 16).to_int();
-        #endif
-            
+#endif
+
             [[intel::fpga_register]] int index = data_round + 8 * CONFIG_T::table_size / 16;
             if (index < 0)
                 index = 0;
             else if (index > CONFIG_T::table_size - 1)
                 index = CONFIG_T::table_size - 1;
-        #ifdef AUTOREG
+#ifdef AUTOREG
             out_data.data[j] = softplus_table[index];
-        #else
+#else
             out_data[j] = softplus_table[index];
-        #endif
+#endif
         }
 
         res_pipe::write(out_data);
@@ -474,29 +457,28 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void softsign_stre
 
 SoftsignActLoop:
 #ifdef AUTOREG
-    while (true){
+    while (true) {
 #else
-    [[intel::initiation_interval(
-        1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
+    [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 #endif
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data.feedback = in_data.feedback;
-        if (in_data.exit_task){
+        if (in_data.exit_task) {
             out_data.exit_task = true;
             res_pipe::write(out_data);
             return;
         }
-    #endif
+#endif
 
     SoftsignPackLoop:
         #pragma unroll
         for (int j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
-    
+
             [[intel::fpga_register]] data_T absValue;
-        #ifdef AUTOREG
+#ifdef AUTOREG
             if (in_data.data[j] < 0) {
                 absValue = -in_data.data[j];
             } else {
@@ -506,12 +488,11 @@ SoftsignActLoop:
             if (absValue > MAX_VALUE)
                 index = CONFIG_T::table_size - 1;
             if (in_data.data[j] < 0) {
-                out_data.data[j] =
-                    static_cast<typename res_arr_T::value_type>(-softsign_table[index]);
+                out_data.data[j] = static_cast<typename res_arr_T::value_type>(-softsign_table[index]);
             } else {
                 out_data.data[j] = static_cast<typename res_arr_T::value_type>(softsign_table[index]);
             }
-        #else
+#else
             if (in_data[j] < 0) {
                 absValue = -in_data[j];
             } else {
@@ -526,7 +507,7 @@ SoftsignActLoop:
             } else {
                 out_data[j] = static_cast<typename ExtractPipeType<res_pipe>::value_type::value_type>(softsign_table[index]);
             }
-        #endif
+#endif
         }
         res_pipe::write(out_data);
     }
@@ -554,12 +535,26 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void softmax_stabl
 
     using input_t = typename input_arr_t::value_type;
 
-    //constexpr unsigned pipeline = input_arr_size / multiplier_limit;
+    // constexpr unsigned pipeline = input_arr_size / multiplier_limit;
 
     [[intel::fpga_register]] input_t data_array[input_arr_size];
     // In causal version input_arr_size is ALWAYS equal to ctx_len
     assert(CONFIG_T::ctx_len == input_arr_size);
-    [[intel::fpga_register]] unsigned mask_size = (CONFIG_T::ctx_len != 0) ? 1 : input_arr_size;
+
+    [[intel::fpga_register]] bool mask[input_arr_size];
+    [[intel::fpga_register]] bool next_unmask[input_arr_size];
+    [[intel::fpga_register]] bool head_track[CONFIG_T::n_head];
+
+    // Init tracker arrays
+    #pragma unroll
+    for (unsigned i = 0; i < input_arr_size; i++) {
+        mask[i] = (CONFIG_T::ctx_len != 0) ? (i == 0) : true;  // 1,0,0,0,....
+        next_unmask[i] = (CONFIG_T::ctx_len != 0) && (i == 1); // 0,1,0,0,....
+    }
+
+    #pragma unroll
+    for (unsigned i = 0; i < CONFIG_T::n_head; i++)
+        head_track[i] = (i == 0);
 
 SoftmaxArrayLoop:
 
@@ -571,12 +566,10 @@ SoftmaxArrayLoop:
         auto in_data_pack = data_pipe::read();
         auto in_pack = in_data_pack.data;
         out_pack.feedback = in_data_pack.feedback;
+        bool exit_task = in_data_pack.exit_task;
+        out_pack.exit_task = exit_task;
 
-        if (in_data_pack.exit_task) {
-            out_pack.exit_task = true;
-            res_pipe::write(out_pack);
-            break;
-        }
+        if (!exit_task) {
 #else
     //[[intel::initiation_interval(pipeline)]]
     for (unsigned i = 0; i < CONFIG_T::n_in / input_arr_size; i++) {
@@ -586,74 +579,76 @@ SoftmaxArrayLoop:
         auto in_pack = data_pipe::read();
 #endif
 
-    SoftmaxArrayPackLoop:
-        #pragma unroll
-        for (unsigned j = 0; j < input_arr_size; j++) {
-            data_array[j] = in_pack[j];
-        }
-
-        // Find the max and compute all delta(x_i, x_max)
-        Op_max<input_t> op_max;
-        [[intel::fpga_register]] input_t x_max = reduce<input_t, input_arr_size, Op_max<input_t>>(data_array, op_max);
-
-        [[intel::fpga_register]] typename CONFIG_T::inp_norm_t d_xi_xmax[input_arr_size];
-
-        #pragma unroll
-        for (unsigned j = 0; j < mask_size; j++) {
-            d_xi_xmax[j] = x_max - data_array[j];
-        }
-
-        // Calculate all the e^x's
-        [[intel::fpga_register]] typename CONFIG_T::accum_t exp_res[input_arr_size] = {};
-
-        #pragma unroll
-        for (unsigned j = 0; j < mask_size; j++) {
-            exp_res[j] =
-                CONFIG_T::exp_table[softmax_idx_from_real_val<typename CONFIG_T::inp_norm_t, CONFIG_T::exp_table_size>(
-                    d_xi_xmax[j])];
-        }
-
-        // Explicitly sum the results with an adder tree.
-        // Rounding & Saturation mode, which improve accuracy, prevent Vivado from expression balancing
-        Op_add<typename CONFIG_T::accum_t> op_add;
-        [[intel::fpga_register]] typename CONFIG_T::inv_inp_t exp_sum =
-            reduce<typename CONFIG_T::accum_t, input_arr_size, Op_add<typename CONFIG_T::accum_t>>(exp_res, op_add);
-
-        [[intel::fpga_register]] typename CONFIG_T::inv_table_t inv_exp_sum =
-            CONFIG_T::invert_table[softmax_idx_from_real_val<typename CONFIG_T::inv_inp_t, CONFIG_T::inv_table_size>(
-                exp_sum)];
-
-        
-    SoftmaxInvPackLoop:
-        #pragma unroll
-        for (unsigned j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
-        #ifdef AUTOREG
-            if constexpr (CONFIG_T::ctx_len != 0){
-                if(j < mask_size)
-                    out_pack.data[j] = exp_res[j] * inv_exp_sum;
-                else
-                    out_pack.data[j] = static_cast<res_T>(0);
+        SoftmaxArrayPackLoop:
+            #pragma unroll
+            for (unsigned j = 0; j < input_arr_size; j++) {
+                data_array[j] = in_pack[j];
             }
-            else{
+
+            // Find the max and compute all delta(x_i, x_max)
+            Op_max<input_t> op_max;
+            [[intel::fpga_register]] input_t x_max = reduce<input_t, input_arr_size, Op_max<input_t>>(data_array, op_max);
+
+            [[intel::fpga_register]] typename CONFIG_T::inp_norm_t d_xi_xmax[input_arr_size];
+
+            #pragma unroll
+            for (unsigned j = 0; j < input_arr_size; j++) {
+                d_xi_xmax[j] = x_max - data_array[j];
+            }
+
+            // Calculate all the e^x's
+            [[intel::fpga_register]] typename CONFIG_T::accum_t exp_res[input_arr_size];
+
+            #pragma unroll
+            for (unsigned j = 0; j < input_arr_size; j++) {
+                exp_res[j] = mask[j] ? CONFIG_T::exp_table[softmax_idx_from_real_val<typename CONFIG_T::inp_norm_t,
+                                                                                     CONFIG_T::exp_table_size>(d_xi_xmax[j])]
+                                     : 0;
+            }
+
+            // Explicitly sum the results with an adder tree.
+            Op_add<typename CONFIG_T::accum_t> op_add;
+            [[intel::fpga_register]] typename CONFIG_T::inv_inp_t exp_sum =
+                reduce<typename CONFIG_T::accum_t, input_arr_size, Op_add<typename CONFIG_T::accum_t>>(exp_res, op_add);
+
+            [[intel::fpga_register]] typename CONFIG_T::inv_table_t inv_exp_sum =
+                CONFIG_T::invert_table[softmax_idx_from_real_val<typename CONFIG_T::inv_inp_t, CONFIG_T::inv_table_size>(
+                    exp_sum)];
+
+        SoftmaxInvPackLoop:
+            #pragma unroll
+            for (unsigned j = 0; j < std::tuple_size<res_arr_T>{}; j++) {
+#ifdef AUTOREG
                 out_pack.data[j] = exp_res[j] * inv_exp_sum;
+#else
+            out_pack[j] = exp_res[j] * inv_exp_sum;
+#endif
             }
-        #else
-            if constexpr (CONFIG_T::ctx_len != 0){
-                if(j < mask_size)
-                    out_pack[j] = exp_res[j] * inv_exp_sum;
-                else
-                    out_pack[j] = static_cast<res_T>(0);
-            }
-            else{
-                out_pack[j] = exp_res[j] * inv_exp_sum;
-            }
-        #endif
+#ifdef AUTOREG
         }
-    #ifdef AUTOREG
-        out_pack.exit_task = false;
-    #endif
         res_pipe::write(out_pack);
-        if constexpr (CONFIG_T::ctx_len != 0) mask_size = ((mask_size + 1) > CONFIG_T::ctx_len) ? CONFIG_T::ctx_len : (mask_size + 1);
+        if (exit_task)
+            return;
+#else
+        res_pipe::write(out_pack);
+#endif
+        if constexpr (CONFIG_T::ctx_len != 0) {
+            bool head_modulo = head_track[CONFIG_T::n_head - 1];
+            if (head_modulo) {
+                #pragma unroll
+                for (unsigned i = 0; i < input_arr_size; i++)
+                    mask[i] = mask[i] | next_unmask[i];
+                #pragma unroll
+                for (unsigned i = input_arr_size - 1; i > 0; i--)
+                    next_unmask[i] = next_unmask[i - 1];
+                next_unmask[0] = false; // This is a redundant 0 check
+            }
+
+            #pragma unroll
+            for (unsigned i = CONFIG_T::n_head - 1; i > 0; i--)
+                head_track[i] = head_track[i - 1];
+            head_track[0] = head_modulo;
+        }
     }
 }
 
@@ -669,18 +664,14 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void softmax_laten
     using input_arr_t = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
     constexpr unsigned input_arr_size = std::tuple_size<input_arr_t>{};
-    constexpr unsigned multiplier_limit =
-        DIV_ROUNDUP(input_arr_size, CONFIG_T::reuse_factor);
+    constexpr unsigned multiplier_limit = DIV_ROUNDUP(input_arr_size, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = input_arr_size / multiplier_limit;
 #endif
 
-
-
     // Calculate all the e^x's
-    [[intel::fpga_register]]
-    typename CONFIG_T::exp_table_t exp_res[input_arr_size];
+    [[intel::fpga_register]] typename CONFIG_T::exp_table_t exp_res[input_arr_size];
 
-SoftmaxExpLoop:    
+SoftmaxExpLoop:
 
 #ifdef AUTOREG
     while (true) {
@@ -697,8 +688,7 @@ SoftmaxExpLoop:
             break;
         }
 #else
-    [[intel::initiation_interval(pipeline)]] 
-    for (unsigned i = 0; i < CONFIG_T::n_in / input_arr_size; i++) {
+    [[intel::initiation_interval(pipeline)]] for (unsigned i = 0; i < CONFIG_T::n_in / input_arr_size; i++) {
         auto in_pack = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_pack;
 #endif
@@ -706,8 +696,8 @@ SoftmaxExpLoop:
         #pragma unroll
         for (unsigned j = 0; j < std::tuple_size<input_arr_t>{}; j++) {
             exp_res[j] =
-                CONFIG_T::exp_table[softmax_idx_from_real_val<typename input_arr_t::value_type,
-                                                              CONFIG_T::exp_table_size>(in_pack[j])];
+                CONFIG_T::exp_table[softmax_idx_from_real_val<typename input_arr_t::value_type, CONFIG_T::exp_table_size>(
+                    in_pack[j])];
         }
 
         // Explicitly sum the results with an adder tree.
@@ -749,41 +739,36 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void softmax_legac
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
 #endif
     // Index into the lookup table based on data for exponentials
-    [[intel::fpga_register]]
-    typename CONFIG_T::table_t exp_res[std::tuple_size<data_arr_T>{}];
+    [[intel::fpga_register]] typename CONFIG_T::table_t exp_res[std::tuple_size<data_arr_T>{}];
     [[intel::fpga_register]] typename CONFIG_T::table_t exp_diff_res;
-    [[intel::fpga_register]] typename data_arr_T::value_type
-        data_cache[std::tuple_size<data_arr_T>{}];
+    [[intel::fpga_register]] typename data_arr_T::value_type data_cache[std::tuple_size<data_arr_T>{}];
 
 SoftmaxInitLoop:
 #ifdef AUTOREG
-    while (true){
+    [[intel::initiation_interval(1)]] while (true) {
 #else
-    [[intel::initiation_interval(1)]] for (unsigned s = 0;
-                                           s < CONFIG_T::n_in /
-                                                   std::tuple_size<data_arr_T>{};
-                                           s++) {
+    [[intel::initiation_interval(1)]] for (unsigned s = 0; s < CONFIG_T::n_in / std::tuple_size<data_arr_T>{}; s++) {
 #endif
         auto in_pack = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_pack;
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_pack.feedback = in_pack.feedback;
-        if (in_pack.exit_task){
+        if (in_pack.exit_task) {
             out_pack.exit_task = true;
             res_pipe::write(out_pack);
             return;
         }
-    #endif       
+#endif
 
     SoftmaxInitPackLoop:
         #pragma unroll
         for (unsigned j = 0; j < std::tuple_size<data_arr_T>{}; j++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             data_cache[j] = in_pack.data[j];
-        #else
+#else
             data_cache[j] = in_pack[j];
-        #endif
+#endif
             exp_res[j] = 0;
         }
 
@@ -816,13 +801,11 @@ SoftmaxInitLoop:
                 exp_res_index = 0;
             if (exp_res_index > CONFIG_T::table_size - 1)
                 exp_res_index = CONFIG_T::table_size - 1;
-        #ifdef AUTOREG
-            out_pack.data[j] = static_cast<typename res_arr_T::value_type>(
-                CONFIG_T::invert_table[exp_res_index]);        
-        #else
-            out_pack[j] = static_cast<typename res_arr_T::value_type>(
-                CONFIG_T::invert_table[exp_res_index]);
-        #endif 
+#ifdef AUTOREG
+            out_pack.data[j] = static_cast<typename res_arr_T::value_type>(CONFIG_T::invert_table[exp_res_index]);
+#else
+            out_pack[j] = static_cast<typename res_arr_T::value_type>(CONFIG_T::invert_table[exp_res_index]);
+#endif
         }
 
         res_pipe::write(out_pack);
@@ -841,57 +824,55 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void softmax_argma
 #endif
 
 #ifdef AUTOREG
-    while (true){
+    while (true) {
 #else
-    [[intel::initiation_interval(
-        1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
+    [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 #endif
         auto in_data = data_pipe::read();
         typename ExtractPipeType<res_pipe>::value_type out_data;
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data.feedback = in_data.feedback;
-        if (in_data.exit_task){
+        if (in_data.exit_task) {
             out_data.exit_task = true;
             res_pipe::write(out_data);
             return;
         }
-    #endif   
+#endif
 
         #pragma unroll
         for (int i = 0; i < std::tuple_size<res_arr_T>{}; i++) {
-        #ifdef AUTOREG
+#ifdef AUTOREG
             out_data.data[i] = static_cast<typename res_arr_T::value_type>(0);
-        #else
+#else
             out_data[i] = static_cast<typename res_arr_T::value_type>(0);
-        #endif
+#endif
         }
-        
-    #ifdef AUTOREG
+
+#ifdef AUTOREG
         [[intel::fpga_register]] typename data_arr_T::value_type maximum = in_data.data[0];
-    #else
+#else
         [[intel::fpga_register]] typename data_arr_T::value_type maximum = in_data[0];
-    #endif
+#endif
         [[intel::fpga_register]] int idx = 0;
 
-        [[intel::initiation_interval(1)]] for (int i = 1;
-                                               i < std::tuple_size<res_arr_T>{}; i++) {
-            
-            #ifdef AUTOREG
+        [[intel::initiation_interval(1)]] for (int i = 1; i < std::tuple_size<res_arr_T>{}; i++) {
+
+#ifdef AUTOREG
             if (in_data.data[i] > maximum) {
                 maximum = in_data.data[i];
-            #else 
+#else
             if (in_data[i] > maximum) {
                 maximum = in_data[i];
-            #endif
+#endif
                 idx = i;
             }
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data.data[idx] = static_cast<typename res_arr_T::value_type>(1);
-    #else
+#else
         out_data[idx] = static_cast<typename res_arr_T::value_type>(1);
-    #endif
+#endif
         res_pipe::write(out_data);
     }
 }
@@ -942,21 +923,21 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> inline void softma
     while (true) {
 #else
     static constexpr unsigned TENSOR_SIZE = CONFIG_T::n_slice * CONFIG_T::n_inner * CONFIG_T::n_outer;
-    for (unsigned t = 0; t < CONFIG_T::n_in / TENSOR_SIZE; t++){
+    for (unsigned t = 0; t < CONFIG_T::n_in / TENSOR_SIZE; t++) {
 #endif
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         [[intel::fpga_register]] data_pipe_T buffer_in_pipe = data_pipe::read();
         out_pack_pipe.feedback = buffer_in_pipe.feedback;
-        if (buffer_in_pipe.exit_task){
+        if (buffer_in_pipe.exit_task) {
             out_pack_pipe.exit_task = true;
             res_pipe::write(out_pack_pipe);
             return;
         }
         buffer_in = buffer_in_pipe.data;
-    #else
+#else
         buffer_in = data_pipe::read();
-    #endif   
+#endif
 
         #pragma unroll
         for (unsigned i = 0; i < CONFIG_T::n_outer; i++) {
@@ -980,13 +961,13 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> inline void softma
                 }
             }
         }
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_pack_pipe.data = buffer_out;
         out_pack_pipe.exit_task = false;
         res_pipe::write(out_pack_pipe);
-    #else
+#else
         res_pipe::write(buffer_out);
-    #endif 
+#endif
     }
 }
 
@@ -1004,8 +985,7 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void dense_tanh_st
 #else
     using data_arr_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-    constexpr unsigned multiplier_limit =
-        DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
+    constexpr unsigned multiplier_limit = DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = std::tuple_size<data_arr_T>{} / multiplier_limit;
 #endif
 
@@ -1013,21 +993,18 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void dense_tanh_st
 
 TanHActLoop:
 #ifdef AUTOREG
-    while (true){
+    while (true) {
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
         out_data_pipe.feedback = in_data_pipe.feedback;
-        if(in_data_pipe.exit_task){
+        if (in_data_pipe.exit_task) {
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
             break;
         }
         data_arr_T in_data = in_data_pipe.data;
 #else
-    [[intel::initiation_interval(pipeline)]] for (int i = 0;
-                                                  i < CONFIG_T::n_in /
-                                                          std::tuple_size<res_arr_T>{};
-                                                  i++) {
+    [[intel::initiation_interval(pipeline)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
         auto in_data = data_pipe::read();
 #endif
         res_arr_T out_data;
@@ -1054,13 +1031,13 @@ TanHActLoop:
                 out_data[j] = -tanh_table[index];
         }
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         res_pipe::write(out_data_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -1078,32 +1055,26 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void sigmoid_strea
 #else
     using data_arr_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-    constexpr unsigned multiplier_limit =
-        DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
+    constexpr unsigned multiplier_limit = DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = std::tuple_size<data_arr_T>{} / multiplier_limit;
 #endif
 
     static const int MAX_VALUE = 8;
 
-
-
 SigmoidActLoop:
 #ifdef AUTOREG
-    while (true){
+    while (true) {
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
         out_data_pipe.feedback = in_data_pipe.feedback;
-        if(in_data_pipe.exit_task){
+        if (in_data_pipe.exit_task) {
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
             break;
         }
         data_arr_T in_data = in_data_pipe.data;
 #else
-    [[intel::initiation_interval(pipeline)]] for (int i = 0;
-                                                  i < CONFIG_T::n_in /
-                                                          std::tuple_size<res_arr_T>{};
-                                                  i++) {
+    [[intel::initiation_interval(pipeline)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
         auto in_data = data_pipe::read();
 #endif
         res_arr_T out_data;
@@ -1130,13 +1101,13 @@ SigmoidActLoop:
                 out_data[j] = 1 - sigmoid_table[index];
         }
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         res_pipe::write(out_data_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -1154,28 +1125,24 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void hard_sigmoid_
 #else
     using data_arr_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-    constexpr unsigned multiplier_limit =
-        DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
+    constexpr unsigned multiplier_limit = DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = std::tuple_size<data_arr_T>{} / multiplier_limit;
 #endif
 
 HardSigmoidActLoop:
 #ifdef AUTOREG
-    while (true){
+    while (true) {
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
         out_data_pipe.feedback = in_data_pipe.feedback;
-        if(in_data_pipe.exit_task){
+        if (in_data_pipe.exit_task) {
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
             break;
         }
         data_arr_T in_data = in_data_pipe.data;
 #else
-    [[intel::initiation_interval(pipeline)]] for (int i = 0;
-                                                  i < CONFIG_T::n_in /
-                                                          std::tuple_size<res_arr_T>{};
-                                                  i++) {
+    [[intel::initiation_interval(pipeline)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 
         auto in_data = data_pipe::read();
 #endif
@@ -1192,13 +1159,13 @@ HardSigmoidActLoop:
             out_data[j] = datareg;
         }
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         res_pipe::write(out_data_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -1212,30 +1179,24 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void hard_tanh_str
 #else
     using data_arr_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-    constexpr unsigned multiplier_limit =
-        DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
+    constexpr unsigned multiplier_limit = DIV_ROUNDUP(std::tuple_size<data_arr_T>{}, CONFIG_T::reuse_factor);
     constexpr unsigned pipeline = std::tuple_size<data_arr_T>{} / multiplier_limit;
 #endif
 
-
-
 HardSigmoidActLoop:
 #ifdef AUTOREG
-    while (true){
+    while (true) {
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
         out_data_pipe.feedback = in_data_pipe.feedback;
-        if(in_data_pipe.exit_task){
+        if (in_data_pipe.exit_task) {
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
             break;
         }
         data_arr_T in_data = in_data_pipe.data;
 #else
-    [[intel::initiation_interval(pipeline)]] for (int i = 0;
-                                                  i < CONFIG_T::n_in /
-                                                          std::tuple_size<res_arr_T>{};
-                                                  i++) {
+    [[intel::initiation_interval(pipeline)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 
         auto in_data = data_pipe::read();
 #endif
@@ -1252,13 +1213,13 @@ HardSigmoidActLoop:
             out_data[j] = 2 * sigmoid - 1;
         }
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         res_pipe::write(out_data_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -1281,19 +1242,18 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void binary_tanh_s
 
 BinaryTanHActLoop:
 #ifdef AUTOREG
-    while (true){
+    while (true) {
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
         out_data_pipe.feedback = in_data_pipe.feedback;
-        if(in_data_pipe.exit_task){
+        if (in_data_pipe.exit_task) {
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
             break;
         }
         data_arr_T in_data = in_data_pipe.data;
 #else
-    [[intel::initiation_interval(
-        1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
+    [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 
         [[intel::fpga_register]] auto in_data = data_pipe::read();
 #endif
@@ -1312,13 +1272,13 @@ BinaryTanHActLoop:
             out_data[j] = binary_cast<cache_T, typename res_arr_T::value_type>(cache);
         }
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         res_pipe::write(out_data_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 
@@ -1335,23 +1295,22 @@ template <class data_pipe, class res_pipe, typename CONFIG_T> void ternary_tanh_
 #else
     using data_arr_T = typename ExtractPipeType<data_pipe>::value_type;
     using res_arr_T = typename ExtractPipeType<res_pipe>::value_type;
-#endif    
+#endif
 
 TernaryTanHActLoop:
 #ifdef AUTOREG
-    while (true){
+    while (true) {
         data_pipe_T in_data_pipe = data_pipe::read();
         res_pipe_T out_data_pipe;
         out_data_pipe.feedback = in_data_pipe.feedback;
-        if(in_data_pipe.exit_task){
+        if (in_data_pipe.exit_task) {
             out_data_pipe.exit_task = true;
             res_pipe::write(out_data_pipe);
             break;
         }
         data_arr_T in_data = in_data_pipe.data;
 #else
-    [[intel::initiation_interval(
-        1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
+    [[intel::initiation_interval(1)]] for (int i = 0; i < CONFIG_T::n_in / std::tuple_size<res_arr_T>{}; i++) {
 
         [[intel::fpga_register]] auto in_data = data_pipe::read();
 #endif
@@ -1368,13 +1327,13 @@ TernaryTanHActLoop:
                 out_data[j] = static_cast<typename res_arr_T::value_type>(0);
         }
 
-    #ifdef AUTOREG
+#ifdef AUTOREG
         out_data_pipe.data = out_data;
         out_data_pipe.exit_task = false;
         res_pipe::write(out_data_pipe);
-    #else
+#else
         res_pipe::write(out_data);
-    #endif
+#endif
     }
 }
 

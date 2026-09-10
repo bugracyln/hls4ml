@@ -1,5 +1,6 @@
-import numpy as np
 import shutil
+
+import numpy as np
 
 from hls4ml.backends.fpga.fpga_layers import BatchNormalizationQuantizedTanh
 from hls4ml.backends.oneapi.oneapi_template import StreamFunctionCallTemplate, TaskSequenceTemplate
@@ -96,14 +97,14 @@ class BatchNormalizationQuantizedTanhTaskSequenceTemplate(TaskSequenceTemplate):
         autoreg_model: bool = node.model.config.get_config_value('HLSConfig').setdefault('Autoregressive', None) is not None
 
         if autoreg_model:
-            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()] 
+            model_inp_names = [layer.pipe_name for layer in node.model.get_input_variables()]
             model_out_names = [layer.pipe_name for layer in node.model.get_output_variables()]
 
-            if (params['input_pipe'] in model_inp_names):
-                params['input_pipe'] = "SW_" + params['input_pipe']
-                
-            if (params['output_pipe'] in model_out_names):
-                params['output_pipe'] = "SW_" + params['output_pipe']
+            if params['input_pipe'] in model_inp_names:
+                params['input_pipe'] = 'SW_' + params['input_pipe']
+
+            if params['output_pipe'] in model_out_names:
+                params['output_pipe'] = 'SW_' + params['output_pipe']
 
         return self.template.format(**params)
 
